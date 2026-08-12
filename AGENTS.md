@@ -2,6 +2,17 @@
 
 This repository is developed concurrently with Codex and Claude Code.
 
+## Default workload policy
+
+For every substantive project task, Claude Code is the lead implementation agent by default.
+
+- Assign roughly 70–80% of meaningful work to Claude: requirements analysis, architecture, backend and core feature implementation, tests, and first-pass code review.
+- Assign roughly 20–30% to Codex: orchestration, local/private-file inspection, integration review, independent verification, deployment, and final reporting.
+- Give Claude complete, bounded deliverables instead of token-burning or duplicate busywork. Use enough turns for implementation and a second review when useful.
+- Codex must inspect Claude's diff and test evidence before integration; Claude output is not accepted solely because it completed.
+- When source material is private or outside the repository, Codex handles it locally and gives Claude a sanitized summary unless the user explicitly approves sending that material to Anthropic.
+- Small mechanical changes may be handled directly when delegation would add no meaningful value.
+
 ## Workspace ownership
 
 - Codex works only on branch `agent/codex` in `.worktrees/codex`.
@@ -34,4 +45,3 @@ When a task is complete, report:
 - known risks or follow-up work.
 
 Do not merge into `main` unless the user explicitly requests integration.
-

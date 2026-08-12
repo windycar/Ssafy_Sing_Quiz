@@ -1,0 +1,14 @@
+{
+  "name": "@song-quiz/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dependency-free answer normalization and alias matching shared by the game server and any client that wants optimistic local feedback.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "main": "answerMatching.ts",
+  "scripts": {
+    "test": "node --test *.test.ts"
+  }
+}

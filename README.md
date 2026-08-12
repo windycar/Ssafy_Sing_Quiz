@@ -2,6 +2,8 @@
 
 This repository uses isolated Git worktrees so Claude Code and Codex can work at the same time without writing to the same files.
 
+Claude Code is the default lead agent for substantive tasks (about 70–80% of the work). Codex coordinates the work, handles sensitive local inputs, independently verifies results, integrates approved commits, and deploys the finished result.
+
 ## Workspace map
 
 | Role | Folder | Branch |
@@ -14,9 +16,9 @@ This repository uses isolated Git worktrees so Claude Code and Codex can work at
 
 1. Open `.worktrees/claude` in VS Code and use the official Claude Code extension.
 2. Open `.worktrees/codex` as the Codex workspace.
-3. Give each agent a separate, clearly scoped task.
-4. Ask each agent to commit its work.
-5. Review and merge the commits from the repository root.
+3. Give Claude the main analysis/implementation/test deliverable and Codex a separate verification/integration deliverable.
+4. Each agent commits coherent work on its own branch.
+5. Codex reviews both results; merge from the repository root only with explicit user approval.
 
 Example integration commands:
 
@@ -37,4 +39,3 @@ git merge main
 ```
 
 Do not store secrets in prompts, committed files, or agent instructions. Use a local `.env` file and provide a sanitized `.env.example` when configuration is needed.
-

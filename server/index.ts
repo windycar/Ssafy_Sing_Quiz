@@ -3,23 +3,86 @@
  *
  * Everything interesting lives in `gameRoom.ts`. This file only owns the
  * things the engine deliberately refuses to own — sockets, wall-clock time,
- * and timers.
+ * and timers — plus the room registry: which rooms exist, which songs each one
+ * drew, and when an abandoned one is collected.
  */
 
 import { createServer } from 'node:http';
+import { randomInt } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { GameRoom } from './gameRoom.ts';
 import { parseClientMessage } from './protocol.ts';
 import type { Effect, PlayerId, RoomId, ServerMessage } from './protocol.ts';
 import { attachWebSocketServer } from './websocket.ts';
 import type { WebSocketConnection } from './websocket.ts';
-import { buildSongCatalog } from '../shared/songCatalog.ts';
-import type { RawSongRecord, SongConfig } from '../shared/songCatalog.ts';
+import { createRequestHandler } from './http.ts';
+import { createStaticHandler } from './staticFiles.ts';
+import { applyMediaRegistrations, buildSongCatalog } from '../shared/songCatalog.ts';
+import type { MediaRegistration, RawSongRecord, SongCatalog, SongConfig } from '../shared/songCatalog.ts';
+
+/** An abandoned room is collected once every player has been gone this long. */
+export const ROOM_IDLE_TTL_MS = 30 * 60_000;
+const REAP_INTERVAL_MS = 5 * 60_000;
 
 interface Session {
   connection: WebSocketConnection;
   roomId: RoomId | null;
   playerId: PlayerId | null;
+}
+
+export interface CreateRoomOptions {
+  /** How many songs the game runs. Defaults to the whole selection. */
+  songCount?: number;
+  /** Restricts the draw to these song ids. Unknown ids are ignored. */
+  songIds?: readonly string[];
+  /** Draw in random order. On by default — see `selectSongs`. */
+  shuffle?: boolean;
+  /** Host-supplied media, applied on top of the server's raw records. */
+  media?: readonly MediaRegistration[];
+  now?: number;
+}
+
+export interface RoomCreation {
+  room: GameRoom;
+  /** The catalog this room was drawn from, including everything it rejected. */
+  catalog: SongCatalog;
+  /** How many songs the room will actually play. */
+  songCount: number;
+}
+
+/**
+ * Picks the songs a room will play.
+ *
+ * Shuffling is on by default and matters for more than variety: the candidate
+ * pool is readable over `GET /api/songs` (a host needs it to register media),
+ * so a fixed order would let a player who fetched the pool know which song is
+ * coming next. A random draw makes that knowledge worth nothing beyond "one of
+ * the pool", which is the same thing a player learns by looking at the game's
+ * subject matter. `randomInt` rather than `Math.random` because the draw is a
+ * fairness input, not a cosmetic one.
+ */
+export function selectSongs(
+  playable: readonly SongConfig[],
+  options: Pick<CreateRoomOptions, 'songCount' | 'songIds' | 'shuffle'> = {},
+): SongConfig[] {
+  let pool = [...playable];
+
+  if (options.songIds !== undefined) {
+    const wanted = new Set(options.songIds);
+    pool = pool.filter((song) => wanted.has(song.id));
+  }
+
+  if (options.shuffle !== false) {
+    for (let i = pool.length - 1; i > 0; i -= 1) {
+      const j = randomInt(i + 1);
+      [pool[i], pool[j]] = [pool[j] as SongConfig, pool[i] as SongConfig];
+    }
+  }
+
+  // Slice after the shuffle, so `songCount` is a random subset rather than a
+  // random ordering of the same first N songs every time.
+  if (options.songCount !== undefined) pool = pool.slice(0, Math.max(0, options.songCount));
+  return pool;
 }
 
 export class GameServer {
@@ -28,22 +91,67 @@ export class GameServer {
   /** Reverse index so a broadcast does not scan every session. */
   private readonly connectionsByPlayer = new Map<PlayerId, WebSocketConnection>();
   private readonly timers = new Map<RoomId, NodeJS.Timeout>();
-  private readonly songs: readonly SongConfig[];
+  /** Last time anything happened in a room, for `reap`. */
+  private readonly touchedAt = new Map<RoomId, number>();
+  private readonly songs: readonly RawSongRecord[];
+  /** Built once from the server's own records; the pool a host starts from. */
+  readonly baseCatalog: SongCatalog;
 
   // Not a constructor parameter property: Node's strip-only TypeScript mode
   // does not support that syntax.
-  constructor(songs: readonly SongConfig[]) {
+  constructor(songs: readonly RawSongRecord[]) {
     this.songs = songs;
+    this.baseCatalog = buildSongCatalog(songs);
   }
 
-  createRoom(now: number = Date.now()): GameRoom {
-    const room = new GameRoom({ songs: this.songs, now });
+  /** The catalog as it would look with these host registrations applied. */
+  buildCatalog(media: readonly MediaRegistration[] = []): SongCatalog {
+    if (media.length === 0) return this.baseCatalog;
+    return buildSongCatalog(applyMediaRegistrations(this.songs, media));
+  }
+
+  roomCount(): number {
+    return this.rooms.size;
+  }
+
+  /**
+   * Every song the server knows about, playable or not.
+   *
+   * Titles leave the process here, which is deliberate and bounded: a host
+   * cannot register media for a song they cannot see. This is the candidate
+   * *pool*, never a room's draw — see `selectSongs` for why that distinction
+   * is what keeps it from being an answer leak.
+   */
+  listSongs(): { id: string; title: string; artist: string }[] {
+    return this.songs.map((song) => ({
+      id: song.id,
+      title: (song.title ?? '').trim(),
+      artist: (song.artist ?? '').trim(),
+    }));
+  }
+
+  createRoom(options: CreateRoomOptions = {}): RoomCreation {
+    const now = options.now ?? Date.now();
+    const catalog = this.buildCatalog(options.media ?? []);
+    const songs = selectSongs(catalog.playable, options);
+
+    const room = new GameRoom({ songs, now });
     this.rooms.set(room.roomId, room);
-    return room;
+    this.touchedAt.set(room.roomId, now);
+    return { room, catalog, songCount: songs.length };
   }
 
   getRoom(roomId: RoomId): GameRoom | undefined {
     return this.rooms.get(roomId);
+  }
+
+  /** Live players in a room, for the join-code lookup endpoint. */
+  connectedCount(roomId: RoomId): number {
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (session.roomId === roomId && session.playerId !== null) count += 1;
+    }
+    return count;
   }
 
   registerConnection(connection: WebSocketConnection): void {
@@ -74,6 +182,7 @@ export class GameServer {
     }
 
     const now = Date.now();
+    this.touchedAt.set(room.roomId, now);
     const effects = room.handleMessage(message, session.playerId, now);
     this.bindIdentity(session, room.roomId, effects);
     this.dispatch(room, effects, connection);
@@ -93,9 +202,35 @@ export class GameServer {
 
     const room = this.rooms.get(session.roomId);
     if (room === undefined) return;
-    const effects = room.handleDisconnect(session.playerId, Date.now());
+    const now = Date.now();
+    this.touchedAt.set(room.roomId, now);
+    const effects = room.handleDisconnect(session.playerId, now);
     this.dispatch(room, effects, connection);
     this.scheduleTimer(room);
+  }
+
+  /**
+   * Drops rooms nobody is connected to any more.
+   *
+   * Room state is in-memory by design (analysis §2), which makes an
+   * un-collected room a permanent leak rather than a stale cache entry. The
+   * idle window is generous because a player refreshing the page is briefly
+   * indistinguishable from one who left for good.
+   */
+  reap(now: number = Date.now(), ttlMs: number = ROOM_IDLE_TTL_MS): number {
+    let removed = 0;
+    for (const [roomId, room] of this.rooms) {
+      if (!room.isEmpty()) continue;
+      if (now - (this.touchedAt.get(roomId) ?? now) < ttlMs) continue;
+
+      const timer = this.timers.get(roomId);
+      if (timer !== undefined) clearTimeout(timer);
+      this.timers.delete(roomId);
+      this.touchedAt.delete(roomId);
+      this.rooms.delete(roomId);
+      removed += 1;
+    }
+    return removed;
   }
 
   /** Learns this connection's player identity from the snapshot it just got. */
@@ -169,29 +304,43 @@ export class GameServer {
 export interface StartOptions {
   port?: number;
   songs: readonly RawSongRecord[];
+  /**
+   * Origins allowed to open a WebSocket and to call the API cross-origin. Empty
+   * disables both checks, which is only appropriate locally (analysis §7).
+   */
   allowedOrigins?: readonly string[];
+  /** Directory holding the reference client. Omit to run API-only. */
+  clientDir?: string;
+  /** Directory holding `shared/`, mounted at `/shared/` for the client. */
+  sharedDir?: string;
 }
 
 export interface RunningServer {
   server: ReturnType<typeof createServer>;
   game: GameServer;
-  catalog: ReturnType<typeof buildSongCatalog>;
+  catalog: SongCatalog;
   /** Cancels timers, drains sockets, and resolves once the port is released. */
   stop(): Promise<void>;
 }
 
 export function startServer(options: StartOptions): RunningServer {
-  const catalog = buildSongCatalog(options.songs);
-  const game = new GameServer(catalog.playable);
+  const game = new GameServer(options.songs);
 
-  const server = createServer((request, response) => {
-    if (request.url === '/health') {
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ status: 'ok', playableSongs: catalog.playable.length }));
-      return;
-    }
-    response.writeHead(404).end();
-  });
+  const staticHandler =
+    options.clientDir === undefined
+      ? undefined
+      : createStaticHandler([
+          { urlPrefix: '/', dir: options.clientDir },
+          ...(options.sharedDir === undefined ? [] : [{ urlPrefix: '/shared/', dir: options.sharedDir }]),
+        ]);
+
+  const server = createServer(
+    createRequestHandler({
+      game,
+      staticHandler,
+      allowedOrigins: options.allowedOrigins ?? [],
+    }),
+  );
 
   const sockets = attachWebSocketServer(
     server,
@@ -207,7 +356,11 @@ export function startServer(options: StartOptions): RunningServer {
 
   if (options.port !== undefined) server.listen(options.port);
 
+  const reaper = setInterval(() => game.reap(), REAP_INTERVAL_MS);
+  reaper.unref?.();
+
   const stop = async (): Promise<void> => {
+    clearInterval(reaper);
     game.shutdown();
     sockets.closeAll();
     server.closeAllConnections();
@@ -217,5 +370,5 @@ export function startServer(options: StartOptions): RunningServer {
     });
   };
 
-  return { server, game, catalog, stop };
+  return { server, game, catalog: game.baseCatalog, stop };
 }

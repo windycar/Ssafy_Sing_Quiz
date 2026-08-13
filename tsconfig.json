@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["shared/**/*.ts", "server/**/*.ts"]
+  "include": ["shared/**/*.ts", "server/**/*.ts", "client/**/*.ts"]
 }

@@ -131,7 +131,7 @@ test('the health endpoint reports how many songs are playable', async () => {
   await withServer(async ({ port }) => {
     const response = await fetch(`http://127.0.0.1:${port}/health`);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { status: 'ok', playableSongs: 1 });
+    assert.deepEqual(await response.json(), { status: 'ok', playableSongs: 1, rooms: 0 });
   });
 });
 
@@ -148,7 +148,7 @@ test('an unplayable catalog yields zero playable songs rather than crashing', as
 
 test('two clients play a full round over real sockets', async () => {
   await withServer(async ({ port, game }) => {
-    const room = game.createRoom();
+    const { room } = game.createRoom();
 
     const host = await TestClient.connect(port);
     host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장' });
@@ -200,7 +200,7 @@ test('two clients play a full round over real sockets', async () => {
 
 test('a reconnecting client keeps its score and gets a fresh snapshot', async () => {
   await withServer(async ({ port, game }) => {
-    const room = game.createRoom();
+    const { room } = game.createRoom();
 
     const host = await TestClient.connect(port);
     host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장' });

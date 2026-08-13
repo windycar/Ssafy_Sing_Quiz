@@ -1,0 +1,14 @@
+{
+  "name": "@song-quiz/client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference web client for the song-guessing game, plus the framework-free protocol client any UI can import. Dependency-free: the server serves these TypeScript sources directly with their types stripped, so there is no build step.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "main": "protocolClient.ts",
+  "scripts": {
+    "test": "node --test *.test.ts"
+  }
+}

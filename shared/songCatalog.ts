@@ -236,6 +236,50 @@ export function buildSongCatalog(records: readonly RawSongRecord[]): SongCatalog
 }
 
 /**
+ * A host-supplied media assignment for one song.
+ *
+ * The recovered catalog ships with `mediaUrl: null` on every record, so this
+ * is the only way a real song becomes playable. Seconds rather than
+ * milliseconds, to match `RawSongRecord` and the source data.
+ */
+export interface MediaRegistration {
+  id: string;
+  mediaUrl: string;
+  clipStart: number;
+  clipEnd: number;
+}
+
+/**
+ * Overlays host registrations onto raw records, returning a new array.
+ *
+ * Registrations for unknown song ids are ignored rather than appended: a host
+ * may only fill in media for songs the server already knows about, so a
+ * request body can never inject a song (and therefore an answer) of its own.
+ */
+export function applyMediaRegistrations(
+  records: readonly RawSongRecord[],
+  registrations: readonly MediaRegistration[],
+): RawSongRecord[] {
+  if (registrations.length === 0) return [...records];
+
+  // Last registration for an id wins, so a host correcting a clip in one
+  // request body does not depend on array order elsewhere.
+  const byId = new Map<string, MediaRegistration>();
+  for (const registration of registrations) byId.set(registration.id, registration);
+
+  return records.map((record) => {
+    const registration = byId.get(record.id);
+    if (registration === undefined) return record;
+    return {
+      ...record,
+      mediaUrl: registration.mediaUrl,
+      clipStart: registration.clipStart,
+      clipEnd: registration.clipEnd,
+    };
+  });
+}
+
+/**
  * Builds the per-round matcher the server uses on its hot path. Kept here
  * (rather than in the server) so the catalog's alias set and the judging
  * alias set can never drift apart.

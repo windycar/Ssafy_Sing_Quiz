@@ -48,19 +48,34 @@ cd shared
 npm.cmd test   # node --test *.test.ts — answerMatching, songCatalog 테스트
 ```
 
-권위 게임 서버(`server/`)도 같은 방식으로 의존성 없이 돌아갑니다.
+권위 게임 서버(`server/`)와 웹 클라이언트(`client/`)도 같은 방식으로 의존성
+없이 돌아갑니다. 서버 하나가 API·WebSocket·클라이언트를 모두 제공합니다.
 
 ```powershell
 cd server
-npm.cmd test    # node --test *.test.ts — 엔진 단위 테스트 + 실제 소켓 종단 테스트
-npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json --demo-clips
+npm.cmd test    # node --test *.test.ts — 엔진 단위 테스트 + 실제 소켓 종단 테스트 + HTTP API 테스트
+npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json
 ```
 
-`npm start`는 방 하나를 만들고 참여 코드와 방장 토큰을 출력합니다. 방을 만드는
-HTTP 라우트가 아직 없기 때문이며, 이 공백은
-[`integration-plan.md`](./integration-plan.md)에 기록되어 있습니다.
-`--demo-clips`는 음원이 비어 있는 곡에 자리표시자를 채우는 개발 전용 옵션입니다
-(소리는 나지 않습니다).
+출력된 주소(<http://localhost:8787>)를 브라우저로 열면 방 만들기부터 진행할 수
+있습니다. 주요 옵션은 다음과 같습니다.
+
+| 옵션 | 뜻 |
+| --- | --- |
+| `--songs <경로>` | 곡 JSON. 배열이거나 `{"songs": [...]}` 형식 |
+| `--port <번호>` | 기본 8787 |
+| `--origin <주소>` | 허용할 출처. **여러 번 지정 가능.** 생략하면 Origin 검사와 CORS 검사가 모두 꺼집니다 — 로컬 전용 |
+| `--demo-clips` | 음원이 비어 있는 곡에 자리표시자를 채우는 개발 전용 옵션 (소리는 나지 않습니다) |
+| `--headless` | 클라이언트를 서빙하지 않고 API/WebSocket만 제공 |
+
+클라이언트 테스트는 순수 리듀서 테스트, 가짜 소켓을 쓴 재접속 테스트, 그리고
+실제 서버를 띄워 실제 WebSocket으로 한 판을 끝까지 진행하는 종단 테스트로
+나뉩니다.
+
+```powershell
+cd client
+npm.cmd test   # node --test *.test.ts
+```
 
 `server/`는 `node:http` 위에 RFC 6455 핸드셰이크와 프레이밍을 직접 구현합니다.
 WebSocket 라이브러리를 받지 않는 이유는 `shared/`와 같습니다 — 설치 단계 없이
@@ -68,20 +83,43 @@ WebSocket 라이브러리를 받지 않는 이유는 `shared/`와 같습니다 �
 다음과 같이 씁니다.
 
 ```ts
-const running = startServer({ port: 8080, songs, allowedOrigins: ['https://…'] });
-const room = running.game.createRoom(); // roomId(참여 코드)와 hostToken을 돌려줍니다
-await running.stop();                   // 타이머 정리 + 소켓 드레이닝
+const running = startServer({
+  port: 8080,
+  songs,
+  allowedOrigins: ['https://…'],
+  clientDir: '…/client',   // 생략하면 API/WebSocket만 제공
+  sharedDir: '…/shared',
+});
+const { room } = running.game.createRoom({ songCount: 10 });
+await running.stop();      // 타이머 정리 + 소켓 드레이닝
 ```
 
-타입 검사는 워크트리 루트의 `tsconfig.json`으로 `shared/`와 `server/`를 함께
+### 빌드 단계가 없는 이유
+
+`client/`는 TypeScript로 작성되어 있지만 번들러가 없습니다. 서버가 `.ts`
+파일을 요청받으면 Node에 내장된 `stripTypeScriptTypes`로 타입만 지워
+JavaScript로 내려보냅니다(`server/staticFiles.ts`). 덕분에
+
+- 저장소 tsconfig가 클라이언트 코드까지 그대로 타입 검사하고,
+- `node --test`가 클라이언트 모듈을 그대로 불러 테스트하며,
+- 브라우저는 **서버와 같은 소스 파일**을 받습니다.
+
+타입 제거는 문법을 공백으로 치환할 뿐이라 브라우저 스택 트레이스의 줄·열
+번호가 원본과 일치합니다. 이 방식은 개발용입니다 — 공개 배포에서 무엇을 대신
+써야 하는지는 [`OPERATIONS.md`](./OPERATIONS.md)에 있습니다.
+
+### 타입 검사
+
+워크트리 루트의 `tsconfig.json` 하나로 `shared/`, `server/`, `client/`를 함께
 확인합니다.
 
 ```powershell
 npx tsc --noEmit -p .
 ```
 
-의존성이 없으므로 `shared`에서는 `npm.cmd install`이 필요하지 않습니다. 현재
-테스트는 27개(`answerMatching` 11개, `songCatalog` 16개)이며 모두 통과해야 합니다.
+의존성이 없으므로 실행과 테스트에는 `npm.cmd install`이 필요하지 않습니다
+(`tsc` 실행에만 TypeScript와 `@types/node`가 필요합니다). 현재 테스트는
+**122개**(`shared` 30개, `server` 74개, `client` 18개)이며 모두 통과해야 합니다.
 Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 미만에서는 문법
 오류로 실패합니다.**
 
@@ -110,8 +148,18 @@ Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 �
 | `docs/integration-plan.md` | 두 브랜치를 병합하는 순서와 충돌 목록 |
 | `docs/USER_GUIDE.md` / `docs/SONG_DATA_GUIDE.md` / `docs/DEVELOPMENT.md` / `docs/OPERATIONS.md` | 사용자·데이터·개발·운영 가이드 (이 문서) |
 | `shared/answerMatching.ts` | 정답 정규화(NFKC, 소문자화, 문자/숫자만 남기기) 및 별칭 매칭 |
-| `shared/songCatalog.ts` | 원본 곡 레코드를 `SongConfig`로 검증·변환, 괄호 별칭 자동 확장 |
-| `shared/*.test.ts` | 위 두 모듈의 단위 테스트 |
+| `shared/songCatalog.ts` | 원본 곡 레코드를 `SongConfig`로 검증·변환, 괄호 별칭 자동 확장, 방장 음원 등록 병합 |
+| `server/gameRoom.ts` | 방 상태 기계. 소켓·시계·타이머를 모르는 순수 로직 |
+| `server/protocol.ts` | 와이어 프로토콜 타입과 수신 메시지 검증 |
+| `server/websocket.ts` | `node:http` 위에 직접 구현한 RFC 6455 전송 계층 |
+| `server/http.ts` | 방 생성·조회·곡 카탈로그 API, 요청 빈도 제한, CORS |
+| `server/staticFiles.ts` | 클라이언트 정적 서빙. `.ts`를 타입 제거해 JS로 내려보냄 |
+| `server/index.ts` | 방 레지스트리와 전송 계층 연결, 타이머 소유, 방치된 방 회수 |
+| `server/main.ts` | 명령줄 실행 진입점 |
+| `client/protocolClient.ts` | 프레임워크 비의존 프로토콜 클라이언트 (재접속, 서버 시계 보정, 메시지→상태 변환) |
+| `client/api.ts` | HTTP API 타입 래퍼 |
+| `client/ui.ts`, `client/index.html`, `client/styles.css` | 참조 웹 클라이언트 (방장·참가자 전 화면) |
+| `*/**.test.ts` | 각 모듈의 테스트 |
 
 ### `music-quiz/` (`agent/codex` 브랜치)
 
@@ -180,33 +228,29 @@ git merge main
 - 배포 관련 자격 증명·플랫폼 설정은 Codex가 로컬에서 다루고, Claude에게는
   필요한 경우 정제된 요약만 전달합니다(`AGENTS.md` 기준).
 
-## 7. 프로토타입 → WebSocket 서버 확장 순서
+## 7. 남은 통합 작업
 
-`music-quiz/app/page.tsx`는 브라우저 로컬 상태만으로 동작하는 프로토타입이고,
-`shared/`는 서버가 써야 할 판정 로직입니다. 이 둘을 실제 권위 서버로
-연결하는 순서는 [`integration-plan.md`](./integration-plan.md) §3의 요약입니다.
+이 브랜치에는 서버와 클라이언트가 모두 있고, 둘은 이미 연결되어 동작합니다.
+남은 것은 `agent/codex`의 Next.js 프로토타입(`music-quiz/`)을 어떻게 할지
+결정하는 일입니다. 전체 순서와 근거는
+[`integration-plan.md`](./integration-plan.md) §3에 있습니다.
 
-1. `agent/claude`를 `main`에 먼저 병합합니다 (문서 + `shared/`, 실행 표면 없음).
-2. `agent/codex`를 `main`에 병합합니다 (텍스트 충돌 없음, `.gitignore`는
-   codex 버전을 채택).
-3. npm 워크스페이스로 `shared/`를 `music-quiz`에 연결하고,
-   `page.tsx`에 있는 자체 `normalizeAnswer`/`isCorrectAnswer`를 지우고
-   `shared/answerMatching.ts`를 가져다 씁니다. 이 단계는 건너뛰거나 미루면
-   안 됩니다 — 이후 서버가 별도 판정 규칙을 갖게 되는 것을 막는 단계입니다.
-4. `realtime-protocol.md` §4의 상태 전이표와 `claude-analysis.md` §2의
-   "방 하나 = 프로세스 하나의 인메모리 상태" 모델대로 권위 서버를 만듭니다.
-   방 생성 시 `buildSongCatalog`, 라운드 시작 시 `createSongMatcher`를 씁니다.
-5. 클라이언트를 프로토콜 클라이언트로 바꿉니다 — 로컬 타이머·로컬 정답
-   판정·하드코딩된 정답 공개를 제거하고 서버 메시지로 상태를 그립니다.
-   정답 입력과 채팅을 분리합니다.
-6. 방장이 `mediaUrl`과 재생 구간을 등록하는 화면을 추가합니다. 이 화면이
-   없으면 `buildSongCatalog`가 복구된 171곡을 전부 `MISSING_MEDIA_URL`로
-   보고하므로 실제 데이터로는 게임을 진행할 수 없습니다.
+| 단계 | 상태 |
+| --- | --- |
+| 1. `agent/claude`를 `main`에 병합 | 대기 (사용자 승인 필요) |
+| 2. `agent/codex`를 `main`에 병합 (`.gitignore`는 codex 버전 채택) | 대기 |
+| 3. `shared/`를 `music-quiz`에 연결하고 `page.tsx`의 자체 정규화 함수 제거 | 대기 |
+| 4. 권위 서버 구현 | **완료** (`server/`) |
+| 5. 클라이언트를 프로토콜 클라이언트로 전환 | **완료** (`client/`) — `music-quiz`에 적용하는 것은 대기 |
+| 6. 방장 음원 등록 화면 | **완료** (`client/ui.ts`, `POST /api/rooms`의 `media`) |
 
-1~3단계는 기계적인 작업이고, 4단계가 가장 큰 작업입니다. 4단계는 반드시
-3단계 이후에 시작해야 합니다 — 그렇지 않으면 서버가 두 번째 판정 로직
-사본을 기준으로 작성됩니다. 각 단계의 diff와 테스트 결과는 통합 전에
-Codex가 검토합니다(`AGENTS.md` 기본 정책).
+`music-quiz`를 살리기로 한다면 다시 만들 것은 화면뿐입니다.
+`client/protocolClient.ts`는 DOM도 프레임워크도 쓰지 않으므로 React 컴포넌트에서
+그대로 `import`할 수 있습니다. 이 서버를 다른 포트에서 띄운 UI와 함께 쓰려면
+`--origin`으로 그 출처를 허용하세요.
+
+각 단계의 diff와 테스트 결과는 통합 전에 Codex가 검토합니다
+(`AGENTS.md` 기본 정책).
 
 ## 관련 문서
 

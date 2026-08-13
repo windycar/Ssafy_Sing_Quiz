@@ -18,9 +18,14 @@ merged up to `main` d1d09f5.
 
 | | `agent/claude` | `agent/codex` |
 | --- | --- | --- |
-| Content | `docs/claude-analysis.md`, `docs/realtime-protocol.md`, `shared/answerMatching.ts` (+ tests) | `music-quiz/` (Next.js/vinext on Cloudflare Workers), `data/songs.recovered.json` (171 songs), `tools/extract-scx-song-text.py`, `docs/scx-recovery.md` |
-| Nature | Design + one runtime module, no app | Working single-player UI prototype, all state client-side |
-| Server | Specified, not built | None — `music-quiz/worker/index.ts` is the stock template worker |
+| Content | Docs, `shared/`, `server/`, `client/` (+ tests) | `music-quiz/` (Next.js/vinext on Cloudflare Workers), `data/songs.recovered.json` (171 songs), `tools/extract-scx-song-text.py`, `docs/scx-recovery.md` |
+| Nature | Playable multiplayer game: authoritative server + reference web client | Working single-player UI prototype, all state client-side |
+| Server | Built and tested | None — `music-quiz/worker/index.ts` is the stock template worker |
+
+Both branches now hold a playable-looking thing, and only one of them judges
+answers on a server. That is the decision the merge has to make deliberately:
+which UI survives. The conflicts below describe what the prototype does that
+the protocol forbids, and they apply unchanged to any port of it.
 
 The two trees do **not** overlap on any file path. `git merge` will not
 report a textual conflict. This is the danger: the merge will look clean
@@ -168,12 +173,17 @@ quantifiable:
 
 Checks run:
 
-- `node --test *.test.ts` in `shared/` — 27 tests, 27 pass
-  (11 pre-existing + 16 new).
-- `tsc --noEmit --strict` over all four `shared/*.ts` files — clean.
+- `node --test *.test.ts` — 122 tests, 122 pass (`shared` 30, `server` 74,
+  `client` 18). The client suite includes a full game played over real
+  WebSockets against the real server through `protocolClient.ts`.
+- `tsc --noEmit -p .` over `shared/`, `server/`, and `client/` — clean.
 - Replay against the real `data/songs.recovered.json` (171 records):
   0 playable as-is (171 × `MISSING_MEDIA_URL`); with media and a 10 s clip
   filled in, 171 playable, 243 accepted aliases, 0 collisions.
+- Manual browser run of `client/`: room creation, join by code, countdown,
+  a 20 s round, a private rejection, host pause holding the timer steady,
+  resume, a correct answer accepted with irregular spacing and punctuation,
+  reveal, and the final podium.
 
 ## 3. Merge order
 
@@ -195,20 +205,28 @@ Each step is independently reviewable and leaves `main` in a coherent state.
    transport; `index.ts` wires them and owns the timers. It uses
    `buildSongCatalog` at construction and `createSongMatcher` per round, and
    holds one in-memory state object per room per `claude-analysis.md` §2.
-   Still missing: an HTTP route for creating a room, so a browser host cannot
-   yet obtain a `roomId`/`hostToken` pair.
-5. **Convert the client to a protocol client.** Replace local state
-   transitions with server messages; remove client-side judging, the
-   hardcoded reveal, and the client-owned timer (§1.2, §1.4). Split answer
-   input from chat (§1.3).
-6. **Add the host media-registration screen.** Until a host can supply
-   `mediaUrl` + clip offsets, `buildSongCatalog` correctly reports every
-   recovered song as unplayable — the game cannot run on real data before
-   this exists.
+   `http.ts` completes it with the bootstrap the WebSocket protocol cannot
+   provide: `POST /api/rooms` issues the `roomId`/`hostToken` pair a browser
+   host needs before there is a room to connect to.
+5. ~~**Convert the client to a protocol client.**~~ — **done**, but for a new
+   client rather than the prototype. `client/protocolClient.ts` is a
+   framework-free protocol client (reconnect by session token, server clock
+   offset, message-to-state reduction) and `client/ui.ts` is a complete
+   reference UI built on it: no client-side judging, no client-owned timer, no
+   chat for a wrong guess to leak into, and `normalizeAnswer` imported from
+   `shared/` for display only. **`music-quiz/` is untouched** — porting it is
+   what remains of this step, and `protocolClient.ts` is importable from React
+   as-is.
+6. ~~**Add the host media-registration screen.**~~ — **done**. The setup screen
+   lists the catalog with its per-song blockers and submits `media` with the
+   room-creation request; `applyMediaRegistrations` overlays it before
+   `buildSongCatalog` runs. Registrations are per-room and are not persisted,
+   which is the remaining gap: a host who wants them to survive must fill the
+   song JSON instead.
 
-Steps 1–3 are mechanical. Step 4 is the bulk of the work and is the one
-that must not be started before step 3, or the server will be written
-against a second copy of the matching rules.
+Steps 1–3 are mechanical and still pending. Step 3 remains the one that must
+not be skipped: the moment `music-quiz` starts talking to this server while
+still holding its own `normalizeAnswer`, §1.1 is live again.
 
 Per `AGENTS.md` ("Default workload policy"), each step's diff and test
 evidence goes to Codex for independent inspection before it is integrated

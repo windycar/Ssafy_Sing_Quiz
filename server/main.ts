@@ -1,17 +1,19 @@
 /**
- * Command-line runner for local development.
+ * Command-line runner.
  *
- * Creates one room at startup and prints its join code and host token, because
- * there is no HTTP route for creating rooms yet. That gap is deliberate and
- * tracked in docs/integration-plan.md — this file exists so the server can be
- * exercised end to end before that route lands.
+ * Serves the API, the WebSocket endpoint, and the reference client from one
+ * origin, so a host opens one URL and everything else — room creation, join
+ * codes, media registration — happens in the browser.
  *
  * Usage:
- *   node main.ts --songs ../../codex/data/songs.recovered.json --port 8787
- *   node main.ts --songs songs.json --demo-clips --origin http://localhost:5173
+ *   node main.ts --songs ../../codex/data/songs.recovered.json
+ *   node main.ts --songs songs.json --port 8787 --origin http://localhost:5173
+ *   node main.ts --songs songs.json --demo-clips   # round loop, no real audio
  */
 
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startServer } from './index.ts';
 import type { RawSongRecord } from '../shared/songCatalog.ts';
 
@@ -20,10 +22,11 @@ interface Options {
   port: number;
   origins: string[];
   demoClips: boolean;
+  headless: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Options {
-  const options: Options = { songsPath: null, port: 8787, origins: [], demoClips: false };
+  const options: Options = { songsPath: null, port: 8787, origins: [], demoClips: false, headless: false };
 
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -44,6 +47,9 @@ function parseArgs(argv: readonly string[]): Options {
       case '--demo-clips':
         options.demoClips = true;
         break;
+      case '--headless':
+        options.headless = true;
+        break;
       default:
         break;
     }
@@ -63,7 +69,7 @@ function loadSongs(path: string): RawSongRecord[] {
 /**
  * Fills in placeholder media so the round loop can be exercised without a
  * licensed source. The URLs do not play audio — this is for verifying the
- * server, never for a real game.
+ * server and the client's round flow, never for a real game.
  */
 function applyDemoClips(songs: readonly RawSongRecord[]): RawSongRecord[] {
   return songs.map((song) => ({
@@ -77,34 +83,46 @@ function applyDemoClips(songs: readonly RawSongRecord[]): RawSongRecord[] {
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
   if (options.songsPath === null) {
-    console.error('사용법: node main.ts --songs <곡 JSON 경로> [--port 8787] [--demo-clips] [--origin <주소>]');
+    console.error(
+      '사용법: node main.ts --songs <곡 JSON 경로> [--port 8787] [--demo-clips] [--origin <주소>] [--headless]',
+    );
     process.exitCode = 1;
     return;
   }
 
   const raw = loadSongs(options.songsPath);
   const songs = options.demoClips ? applyDemoClips(raw) : raw;
-  const running = startServer({ port: options.port, songs, allowedOrigins: options.origins });
-  const room = running.game.createRoom();
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  const running = startServer({
+    port: options.port,
+    songs,
+    allowedOrigins: options.origins,
+    // `--headless` runs the API alone, for a deployment that serves the client
+    // from somewhere else (a CDN, or the codex Next.js app).
+    clientDir: options.headless ? undefined : resolve(here, '../client'),
+    sharedDir: options.headless ? undefined : resolve(here, '../shared'),
+  });
 
   const { playable, issues } = running.catalog;
   console.log(`재생 가능한 곡: ${playable.length} / ${raw.length}`);
-  if (playable.length === 0) {
-    console.log('재생 가능한 곡이 없어 게임을 시작할 수 없습니다. 음원 URL과 재생 구간을 채우거나 --demo-clips 를 쓰세요.');
-  }
 
   // Group the issues so a 171-song catalog does not print 171 lines.
   const byCode = new Map<string, number>();
   for (const issue of issues) byCode.set(issue.code, (byCode.get(issue.code) ?? 0) + 1);
   for (const [code, count] of byCode) console.log(`  제외 ${count}곡: ${code}`);
 
-  console.log(`\n서버: http://localhost:${options.port}  (상태 확인: /health)`);
-  console.log(`WebSocket: ws://localhost:${options.port}/ws`);
-  console.log(`방 참여 코드: ${room.roomId}`);
-  console.log(`방장 토큰: ${room.hostToken}`);
-  console.log('방장 토큰은 공유하지 마세요. 참여 코드만 참가자에게 알려 주면 됩니다.\n');
+  const base = `http://localhost:${options.port}`;
+  console.log(`\n서버: ${base}  (상태 확인: ${base}/health)`);
+  if (!options.headless) console.log(`브라우저에서 ${base} 를 열고 "방 만들기" 를 누르세요.`);
+  if (playable.length === 0) {
+    console.log(
+      '\n재생 가능한 곡이 없습니다. 방장 화면의 "음원 등록"에서 곡별 음원 URL과 재생 구간(5~15초)을\n' +
+        '입력하거나, 곡 JSON 의 mediaUrl/clipStart/clipEnd 를 채우세요. 서버 동작만 확인하려면 --demo-clips 를 쓰세요.',
+    );
+  }
   if (options.origins.length === 0) {
-    console.log('경고: --origin 을 지정하지 않아 Origin 검사가 꺼져 있습니다. 로컬 개발에서만 쓰세요.');
+    console.log('\n경고: --origin 을 지정하지 않아 Origin 검사가 꺼져 있습니다. 로컬 개발에서만 쓰세요.');
   }
 
   const shutdown = (): void => {

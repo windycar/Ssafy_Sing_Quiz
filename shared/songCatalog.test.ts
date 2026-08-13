@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  applyMediaRegistrations,
   expandTitleAliases,
   buildSongCatalog,
   createSongMatcher,
@@ -168,4 +169,54 @@ test('toRoundPublicPayload never leaks the answer to clients', () => {
   assert.equal(payload.song.clipDurationMs, 10_000);
   assert.equal(payload.song.totalSongs, 20);
   assert.equal(payload.mediaUrl, 'https://example.invalid/clip-a1b2c3.mp3');
+});
+
+test('host media registration makes a recovered record playable', () => {
+  // Exactly the shape every one of the 171 recovered records has.
+  const recovered: RawSongRecord = {
+    id: 'rec-1',
+    artist: '아이유',
+    title: '좋은 날',
+    aliases: ['좋은 날'],
+    mediaUrl: null,
+    clipStart: null,
+    clipEnd: null,
+  };
+
+  assert.equal(buildSongCatalog([recovered]).playable.length, 0);
+
+  const registered = applyMediaRegistrations(
+    [recovered],
+    [{ id: 'rec-1', mediaUrl: 'https://cdn.invalid/a.mp3', clipStart: 30, clipEnd: 40 }],
+  );
+  const { playable } = buildSongCatalog(registered);
+
+  assert.equal(playable.length, 1);
+  assert.equal(playable[0].clipStartMs, 30_000);
+  assert.equal(playable[0].clipEndMs, 40_000);
+  // The original array is untouched, so a registration for one room cannot
+  // change what another room sees.
+  assert.equal(recovered.mediaUrl, null);
+});
+
+test('a registration for an unknown song id is ignored, never appended', () => {
+  const records = [playableRecord({ id: 'known' })];
+  const result = applyMediaRegistrations(records, [
+    { id: 'ghost', mediaUrl: 'https://cdn.invalid/x.mp3', clipStart: 0, clipEnd: 10 },
+  ]);
+
+  // A request body must not be able to introduce a song — and therefore an
+  // answer — the server never loaded.
+  assert.deepEqual(result.map((record) => record.id), ['known']);
+});
+
+test('the last registration for a song wins', () => {
+  const records = [playableRecord({ id: 'a' })];
+  const result = applyMediaRegistrations(records, [
+    { id: 'a', mediaUrl: 'https://cdn.invalid/first.mp3', clipStart: 0, clipEnd: 10 },
+    { id: 'a', mediaUrl: 'https://cdn.invalid/second.mp3', clipStart: 5, clipEnd: 15 },
+  ]);
+
+  assert.equal(result[0].mediaUrl, 'https://cdn.invalid/second.mp3');
+  assert.equal(result[0].clipStart, 5);
 });

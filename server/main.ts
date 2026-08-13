@@ -6,19 +6,28 @@
  * codes, media registration — happens in the browser.
  *
  * Usage:
+ *   node main.ts --playlist songs.txt              # YouTube links, host plays them
  *   node main.ts --songs ../../codex/data/songs.recovered.json
  *   node main.ts --songs songs.json --port 8787 --origin http://localhost:5173
  *   node main.ts --songs songs.json --demo-clips   # round loop, no real audio
+ *
+ * `--playlist` is the setup for a room with a computer at the front: the file
+ * lists YouTube links, one per line, and the host's browser plays them. See
+ * docs/USER_GUIDE.md. It can be combined with `--songs`, which then supplies
+ * the catalog that link-only lines are identified against.
  */
 
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './index.ts';
+import { resolvePlaylist } from './playlistLoader.ts';
+import { parsePlaylist } from '../shared/playlist.ts';
 import type { RawSongRecord } from '../shared/songCatalog.ts';
 
 interface Options {
   songsPath: string | null;
+  playlistPath: string | null;
   port: number;
   origins: string[];
   demoClips: boolean;
@@ -26,7 +35,14 @@ interface Options {
 }
 
 function parseArgs(argv: readonly string[]): Options {
-  const options: Options = { songsPath: null, port: 8787, origins: [], demoClips: false, headless: false };
+  const options: Options = {
+    songsPath: null,
+    playlistPath: null,
+    port: 8787,
+    origins: [],
+    demoClips: false,
+    headless: false,
+  };
 
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -34,6 +50,10 @@ function parseArgs(argv: readonly string[]): Options {
     switch (flag) {
       case '--songs':
         options.songsPath = value ?? null;
+        i += 1;
+        break;
+      case '--playlist':
+        options.playlistPath = value ?? null;
         i += 1;
         break;
       case '--port':
@@ -72,25 +92,87 @@ function loadSongs(path: string): RawSongRecord[] {
  * server and the client's round flow, never for a real game.
  */
 function applyDemoClips(songs: readonly RawSongRecord[]): RawSongRecord[] {
-  return songs.map((song) => ({
-    ...song,
-    mediaUrl: song.mediaUrl ?? `https://media.invalid/${song.id}`,
-    clipStart: song.clipStart ?? 30,
-    clipEnd: song.clipEnd ?? 40,
-  }));
+  return songs.map((song) => {
+    // A YouTube song is already playable and has no audio to stand in for.
+    if (typeof song.youtubeId === 'string' && song.youtubeId !== '') return song;
+    return {
+      ...song,
+      mediaUrl: song.mediaUrl ?? `https://media.invalid/${song.id}`,
+      clipStart: song.clipStart ?? 30,
+      clipEnd: song.clipEnd ?? 40,
+    };
+  });
 }
 
-function main(): void {
+/**
+ * Reads the playlist file and works out what each line is.
+ *
+ * Returns null when the file cannot be used at all, having already explained
+ * why. Lines that fail individually are reported and skipped: losing one link
+ * an hour before an event should not cost the host the other nineteen.
+ */
+async function loadPlaylist(path: string, catalog: readonly RawSongRecord[]): Promise<RawSongRecord[] | null> {
+  const { entries, problems } = parsePlaylist(readFileSync(path, 'utf8'));
+
+  for (const problem of problems) {
+    console.error(`  ${path}:${problem.line}  ${problem.message}`);
+    console.error(`    ${problem.text}`);
+  }
+
+  if (entries.length === 0) {
+    console.error(`\n${path} 에서 사용할 수 있는 링크를 찾지 못했습니다.`);
+    return null;
+  }
+
+  const needsLookup = entries.filter((entry) => entry.answers.length === 0).length;
+  if (needsLookup > 0) {
+    console.log(`유튜브에서 ${needsLookup}곡의 제목을 확인하는 중…`);
+  }
+
+  const { songs, failures } = await resolvePlaylist(entries, catalog);
+  for (const failure of failures) {
+    console.error(`  ${path}:${failure.line}  ${failure.message}`);
+  }
+
+  for (const song of songs) {
+    const how = song.source === 'file' ? '직접 지정' : `자동 인식 · ${song.videoTitle ?? ''}`;
+    console.log(`  ${song.record.title}  (${how})`);
+  }
+
+  if (songs.length === 0) {
+    console.error('\n재생할 수 있는 곡이 하나도 없습니다.');
+    return null;
+  }
+  return songs.map((song) => song.record);
+}
+
+async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  if (options.songsPath === null) {
+  if (options.songsPath === null && options.playlistPath === null) {
     console.error(
-      '사용법: node main.ts --songs <곡 JSON 경로> [--port 8787] [--demo-clips] [--origin <주소>] [--headless]',
+      '사용법: node main.ts --playlist <링크 목록 txt>\n' +
+        '        node main.ts --songs <곡 JSON 경로> [--port 8787] [--demo-clips] [--origin <주소>] [--headless]',
     );
     process.exitCode = 1;
     return;
   }
 
-  const raw = loadSongs(options.songsPath);
+  // With both flags, the JSON is the catalog a link-only playlist line is
+  // identified against; the playlist is what actually gets played.
+  const catalog = options.songsPath === null ? [] : loadSongs(options.songsPath);
+
+  let raw: RawSongRecord[];
+  if (options.playlistPath === null) {
+    raw = catalog;
+  } else {
+    const loaded = await loadPlaylist(options.playlistPath, catalog);
+    if (loaded === null) {
+      process.exitCode = 1;
+      return;
+    }
+    raw = loaded;
+  }
+
   const songs = options.demoClips ? applyDemoClips(raw) : raw;
 
   const here = dirname(fileURLToPath(import.meta.url));
@@ -132,4 +214,4 @@ function main(): void {
   process.on('SIGTERM', shutdown);
 }
 
-main();
+void main();

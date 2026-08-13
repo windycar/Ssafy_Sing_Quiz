@@ -16,8 +16,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CreateRoomOptions, GameServer, RoomCreation } from './index.ts';
 import type { StaticHandler } from './staticFiles.ts';
 import type { CatalogIssue, MediaRegistration } from '../shared/songCatalog.ts';
-import { identifySongFromVideo, oEmbedUrl, parseYouTubeLink } from '../shared/youtube.ts';
-import type { OEmbedResponse } from '../shared/youtube.ts';
+import { identifySongFromVideo, parseYouTubeLink } from '../shared/youtube.ts';
+import { lookupVideo } from './youtubeLookup.ts';
 
 /** Refuses to hold more than this many rooms at once (memory is the limit). */
 export const MAX_ROOMS = 500;
@@ -137,59 +137,6 @@ function parseMediaRegistrations(raw: unknown): ParseResult<MediaRegistration[]>
     out.push({ id, mediaUrl, clipStart, clipEnd });
   }
   return { ok: true, value: out };
-}
-
-/** A slow or unreachable YouTube must not hold a host's request open. */
-const OEMBED_TIMEOUT_MS = 8_000;
-
-type VideoLookup =
-  | { ok: true; title: string; channel: string | null }
-  | { ok: false; message: string };
-
-/**
- * Asks YouTube what a video is called.
- *
- * oEmbed is used because it needs no API key and no account. The request goes
- * to a URL this process builds from an already-validated 11-character id, so a
- * host cannot steer this fetch anywhere else — which is the only reason a
- * server-side fetch of a user-supplied link is safe here.
- */
-async function lookupVideo(videoId: string): Promise<VideoLookup> {
-  let response: Response;
-  try {
-    response = await fetch(oEmbedUrl(videoId), {
-      signal: AbortSignal.timeout(OEMBED_TIMEOUT_MS),
-      headers: { accept: 'application/json' },
-    });
-  } catch {
-    return { ok: false, message: '유튜브에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.' };
-  }
-
-  if (response.status === 401 || response.status === 403 || response.status === 404) {
-    return {
-      ok: false,
-      message: '비공개이거나 삭제된 영상입니다. 다른 링크를 사용해 주세요.',
-    };
-  }
-  if (!response.ok) {
-    return { ok: false, message: `유튜브가 응답하지 않았습니다 (HTTP ${response.status}).` };
-  }
-
-  let body: OEmbedResponse;
-  try {
-    body = (await response.json()) as OEmbedResponse;
-  } catch {
-    return { ok: false, message: '유튜브 응답을 이해하지 못했습니다.' };
-  }
-
-  const title = typeof body.title === 'string' ? body.title : '';
-  if (title === '') return { ok: false, message: '영상 제목을 읽지 못했습니다.' };
-
-  return {
-    ok: true,
-    title,
-    channel: typeof body.author_name === 'string' ? body.author_name : null,
-  };
 }
 
 export function parseCreateRoomRequest(raw: unknown): ParseResult<CreateRoomOptions> {

@@ -536,11 +536,13 @@ function renderRanks(target: HTMLOListElement, entries: readonly LeaderboardEntr
   target.replaceChildren();
   for (const entry of entries) {
     const item = document.createElement('li');
-    if (entry.playerId === youId) item.classList.add('you');
+    // `me` is what the stylesheet highlights; `you` is kept for anything
+    // outside this file that still looks for it.
+    if (entry.playerId === youId) item.classList.add('me', 'you');
 
     const rank = document.createElement('span');
     rank.className = 'rank';
-    rank.textContent = `${entry.rank}위`;
+    rank.textContent = String(entry.rank);
 
     const name = document.createElement('span');
     // textContent, not innerHTML: nicknames are untrusted (analysis §7).
@@ -561,13 +563,14 @@ function renderRoster(state: ClientState): void {
   for (const entry of state.players) {
     const item = document.createElement('li');
     if (!entry.connected) item.classList.add('offline');
+    if (!entry.ready) item.classList.add('waiting');
 
     const name = document.createElement('span');
     name.textContent = entry.nickname;
 
     const tag = document.createElement('span');
-    tag.className = entry.ready ? 'tag ready' : 'tag';
-    tag.textContent = !entry.connected ? '접속 끊김' : entry.ready ? '준비 완료' : '대기 중';
+    tag.className = entry.ready ? 'state tag ready' : 'state tag';
+    tag.textContent = !entry.connected ? 'OFF' : entry.ready ? '✓' : '…';
 
     item.append(name, tag);
     roster.append(item);
@@ -611,7 +614,7 @@ function renderFeedback(state: ClientState): void {
 function renderRound(state: ClientState): void {
   const round = state.round;
   el('round-progress').textContent =
-    round === null ? '' : `${round.song.index + 1} / ${round.song.totalSongs} 곡`;
+    round === null ? '' : `${String(round.song.index + 1).padStart(2, '0')} / ${round.song.totalSongs}`;
 
   const isHost = hostToken !== null;
   el('host-controls').hidden = !isHost;
@@ -679,16 +682,19 @@ function render(state: ClientState): void {
       const ranks = state.finalRanks ?? [];
       const podium = el<HTMLOListElement>('podium');
       podium.replaceChildren();
+      // Document order is 1st, 2nd, 3rd; the stylesheet reorders them so the
+      // winner stands in the middle.
       for (const [position, entry] of ranks.slice(0, 3).entries()) {
         const item = document.createElement('li');
-        const medal = document.createElement('span');
-        medal.className = 'medal';
-        medal.textContent = ['🥇', '🥈', '🥉'][position] ?? '';
         const name = document.createElement('strong');
         name.textContent = entry.nickname;
-        const score = document.createElement('div');
-        score.textContent = `${entry.score}점`;
-        item.append(medal, name, score);
+        const score = document.createElement('span');
+        score.className = 'score';
+        score.textContent = `${entry.score} PTS`;
+        const block = document.createElement('div');
+        block.className = 'block';
+        block.textContent = String(position + 1);
+        item.append(name, score, block);
         podium.append(item);
       }
       renderRanks(el<HTMLOListElement>('final-ranks'), ranks, state.playerId);
@@ -727,19 +733,25 @@ function tick(): void {
   const timer = el('timer');
   const fill = el('timer-fill');
   const text = el('timer-text');
+  // The record stops spinning while the round is paused, which is the clearest
+  // signal from the back of a room that nothing is running.
+  const stage = document.querySelector('#screen-round .stage');
 
   if (round === null || state.phase !== 'IN_ROUND') {
     fill.style.width = '0%';
     text.textContent = '';
-    timer.classList.remove('paused');
+    timer.classList.remove('paused', 'urgent');
+    stage?.classList.remove('paused');
     return;
   }
 
   const remaining = client.remainingMs() ?? 0;
   const total = Math.max(1, round.deadline - round.serverStartedAt);
   fill.style.width = `${Math.min(100, (remaining / total) * 100)}%`;
-  text.textContent = round.paused ? `일시정지 · ${(remaining / 1000).toFixed(1)}초 남음` : `${(remaining / 1000).toFixed(1)}초`;
+  text.textContent = (remaining / 1000).toFixed(1);
   timer.classList.toggle('paused', round.paused);
+  timer.classList.toggle('urgent', remaining <= 5_000);
+  stage?.classList.toggle('paused', round.paused);
 }
 
 // ---------------------------------------------------------------------------

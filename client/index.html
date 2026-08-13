@@ -7,145 +7,293 @@
     <link rel="stylesheet" href="/styles.css" />
     <script type="module" src="/ui.ts"></script>
   </head>
-  <body>
+  <body class="app-shell">
+    <!--
+      두 종류의 화면이 한 파일에 있습니다. 방장은 교실 앞 컴퓨터의 넓은 화면,
+      참가자는 각자 폰의 좁은 화면입니다. 레이아웃은 좁은 쪽을 기본으로 하고
+      넓어지면 여러 열로 펼칩니다 — 참가자 화면이 깨지면 게임 자체가 안 되기
+      때문입니다.
+    -->
     <header class="topbar">
-      <h1>Drop the Beat</h1>
-      <p id="connection" class="status"></p>
+      <div class="brand">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span class="brand-copy">
+          <b>DROP THE BEAT</b>
+          <small>ONLINE MUSIC QUIZ</small>
+        </span>
+      </div>
+      <div class="top-actions">
+        <span class="connection"><i></i> <b id="connection"></b></span>
+      </div>
     </header>
 
     <main>
       <!-- 1. 시작 화면 ------------------------------------------------------->
-      <section id="screen-home" class="screen">
-        <h2>방 참여</h2>
-        <form id="join-form" class="stack">
-          <label for="join-code">참여 코드</label>
-          <input id="join-code" name="code" autocomplete="off" required />
-          <label for="join-nickname">닉네임</label>
-          <input id="join-nickname" name="nickname" maxlength="16" autocomplete="off" required />
-          <button type="submit" class="primary">참여하기</button>
-        </form>
+      <section id="screen-home" class="screen lobby page-enter">
+        <div class="lobby-heading">
+          <div>
+            <span class="eyebrow">ONLINE MUSIC QUIZ</span>
+            <h1>방에 들어가<br /><em>비트를 맞히세요.</em></h1>
+          </div>
+        </div>
 
-        <hr />
+        <div class="lobby-grid">
+          <section class="panel player-panel">
+            <div class="panel-title"><div>방 참여</div></div>
+            <form id="join-form" class="answer-form">
+              <label for="join-code">참여 코드</label>
+              <div><input id="join-code" name="code" autocomplete="off" required /></div>
+              <label for="join-nickname">닉네임</label>
+              <div>
+                <input id="join-nickname" name="nickname" maxlength="16" autocomplete="off" required />
+                <button type="submit">참여</button>
+              </div>
+            </form>
+          </section>
 
-        <h2>방 만들기</h2>
-        <p class="muted">방장은 곡을 고르고 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.</p>
-        <button id="go-setup" type="button">방 만들기</button>
+          <aside class="lobby-side">
+            <section class="panel settings-card">
+              <div class="panel-title">
+                <div>방 만들기</div>
+                <span class="host-only">HOST</span>
+              </div>
+              <p class="card-copy">
+                방장은 곡을 고르고 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.
+              </p>
+            </section>
+            <button id="go-setup" type="button" class="start-button">
+              <span>방 만들기</span><b>NEW</b>
+            </button>
+          </aside>
+        </div>
       </section>
 
       <!-- 2. 방장 설정 화면 -------------------------------------------------->
-      <section id="screen-setup" class="screen" hidden>
-        <h2>방 설정</h2>
-        <p>참여 코드: <code id="invite-code" class="code"></code></p>
-
-        <label for="invite-link">참가자에게 보낼 링크</label>
-        <div class="row">
-          <input id="invite-link" readonly />
-          <button id="copy-invite" type="button">복사</button>
+      <section id="screen-setup" class="screen lobby page-enter" hidden>
+        <div class="lobby-heading">
+          <div>
+            <span class="eyebrow">HOST SETUP</span>
+            <h1>곡을 고르고<br /><em>방에 입장하세요.</em></h1>
+          </div>
+          <div class="lobby-summary">
+            <b><code id="invite-code" class="code"></code></b>
+            <span>ROOM CODE</span>
+          </div>
         </div>
 
-        <p class="warning">
-          방장 링크에는 방장 권한 토큰이 들어 있습니다. <strong>절대 참가자에게 공유하지 마세요.</strong>
-          새로고침해도 이 탭에서는 방장 권한이 유지되며, 다른 기기에서 진행할 때만 필요합니다.
-        </p>
-        <button id="copy-host" type="button">방장 링크 복사</button>
+        <div class="lobby-grid">
+          <section class="panel playlist-card">
+            <div class="panel-title">
+              <div>음원 등록</div>
+              <span id="catalog-summary">곡 목록을 불러오는 중…</span>
+            </div>
+            <p class="card-copy">
+              곡별로 음원 URL과 재생 구간(5~15초)을 입력합니다. <b>저작권이 확보된 음원만</b>
+              사용하세요. 여기 입력한 값은 이 방에만 적용되며 서버에 저장되지 않습니다.
+              유튜브로 진행한다면 <code>--playlist</code> 로 서버를 켜세요.
+            </p>
+            <details id="media-panel">
+              <summary>곡 목록 펼치기</summary>
+              <input id="song-filter" type="search" placeholder="곡 제목 또는 가수 검색" autocomplete="off" />
+              <ul id="song-list" class="song-list song-stack"></ul>
+              <p id="song-list-more" class="muted" hidden></p>
+            </details>
+          </section>
 
-        <hr />
+          <aside class="lobby-side">
+            <section class="panel settings-card">
+              <div class="panel-title">
+                <div>게임 설정</div>
+                <span class="host-only">HOST ONLY</span>
+              </div>
+              <label for="song-count"><span>출제 곡 수</span></label>
+              <div class="setting-row">
+                <input id="song-count" type="number" min="1" max="50" value="5" />
+              </div>
+              <div class="setting-row">
+                <span>곡 설정</span>
+                <button id="save-setlist" type="button" class="text-button">저장</button>
+              </div>
+              <p id="setlist-summary" class="card-copy"></p>
+              <p id="setup-error" class="card-copy error" hidden></p>
+            </section>
 
-        <h3>출제할 곡</h3>
-        <p id="catalog-summary" class="muted">곡 목록을 불러오는 중…</p>
+            <section class="panel settings-card">
+              <div class="panel-title"><div>초대</div></div>
+              <div class="setting-row">
+                <input id="invite-link" readonly />
+                <button id="copy-invite" type="button" class="text-button">복사</button>
+              </div>
+              <div class="setting-row">
+                <span>방장 링크</span>
+                <button id="copy-host" type="button" class="text-button">복사</button>
+              </div>
+              <p class="card-copy warning">
+                방장 링크에는 진행 권한이 들어 있습니다. <b>참가자에게 공유하지 마세요.</b>
+                이 탭에서는 새로고침해도 권한이 유지됩니다.
+              </p>
+            </section>
 
-        <label for="song-count">출제 곡 수</label>
-        <input id="song-count" type="number" min="1" max="50" value="5" />
-
-        <details id="media-panel">
-          <summary>음원 등록 (재생 가능한 곡이 없다면 필수)</summary>
-          <p class="muted">
-            곡별로 음원 URL과 재생 구간을 입력합니다. 구간 길이는 5~15초여야 합니다. 저작권이 확보된
-            음원만 사용하세요. 여기에 입력한 값은 이 방에만 적용되며 서버에 저장되지 않습니다.
-          </p>
-          <input id="song-filter" type="search" placeholder="곡 제목 또는 가수 검색" autocomplete="off" />
-          <ul id="song-list" class="song-list"></ul>
-          <p id="song-list-more" class="muted" hidden></p>
-        </details>
-
-        <p id="setup-error" class="error" hidden></p>
-        <div class="row">
-          <button id="save-setlist" type="button">곡 설정 저장</button>
+            <form id="host-enter-form" class="answer-form">
+              <label for="host-nickname">방장 닉네임</label>
+              <div>
+                <input id="host-nickname" maxlength="16" value="방장" autocomplete="off" required />
+                <button type="submit">입장</button>
+              </div>
+            </form>
+          </aside>
         </div>
-        <p id="setlist-summary" class="muted"></p>
-
-        <hr />
-        <form id="host-enter-form" class="stack">
-          <label for="host-nickname">방장 닉네임</label>
-          <input id="host-nickname" maxlength="16" value="방장" autocomplete="off" required />
-          <button type="submit" class="primary">방에 입장</button>
-        </form>
       </section>
 
       <!-- 4. 대기실 ----------------------------------------------------------->
-      <section id="screen-lobby" class="screen" hidden>
-        <h2>대기실</h2>
-        <p>참여 코드: <code id="lobby-code" class="code"></code></p>
-        <ul id="roster" class="roster"></ul>
-        <div class="row">
-          <button id="ready-toggle" type="button">준비</button>
-          <button id="start-game" type="button" class="primary" hidden>게임 시작</button>
+      <section id="screen-lobby" class="screen lobby page-enter" hidden>
+        <div class="lobby-heading">
+          <div>
+            <span class="eyebrow">WAITING ROOM</span>
+            <h1>모두 준비되면<br /><em>비트를 시작하세요.</em></h1>
+          </div>
+          <div class="lobby-summary">
+            <b><code id="lobby-code" class="code"></code></b>
+            <span>ROOM CODE</span>
+          </div>
         </div>
-        <p id="lobby-hint" class="muted"></p>
+
+        <div class="lobby-grid">
+          <section class="panel player-panel">
+            <div class="panel-title">
+              <div><span class="live-dot"></span> 참가자</div>
+            </div>
+            <ul id="roster" class="roster player-grid"></ul>
+          </section>
+
+          <aside class="lobby-side">
+            <section class="panel settings-card">
+              <div class="panel-title"><div>내 상태</div></div>
+              <div class="setting-row">
+                <span>준비</span>
+                <button id="ready-toggle" type="button" class="text-button">준비</button>
+              </div>
+              <p id="lobby-hint" class="card-copy"></p>
+            </section>
+            <button id="start-game" type="button" class="start-button" hidden>
+              <span>게임 시작</span><b>ENTER ↵</b>
+            </button>
+          </aside>
+        </div>
       </section>
 
       <!-- 5. 라운드 ----------------------------------------------------------->
-      <section id="screen-round" class="screen" hidden>
-        <p id="round-progress" class="muted"></p>
-        <p id="countdown" class="countdown" hidden></p>
+      <section id="screen-round" class="screen game-layout page-enter" hidden>
+        <aside class="scoreboard panel">
+          <div class="panel-title">
+            <div><span class="live-dot"></span> LIVE RANKING</div>
+          </div>
+          <ol id="round-ranks" class="ranks rank-list"></ol>
+          <div class="legend">
+            <span><i class="lime-dot"></i> 서버 판정</span>
+            <small>1·2·3등 100·50·30점</small>
+          </div>
+        </aside>
 
-        <div id="timer" class="timer">
-          <div id="timer-fill" class="timer-fill"></div>
-        </div>
-        <p id="timer-text" class="timer-text"></p>
+        <section class="stage">
+          <div class="round-meta">
+            <div>
+              <span>ROUND</span>
+              <b id="round-progress"></b>
+            </div>
+            <div id="timer" class="timer">
+              <b id="timer-text"></b>
+              <small>SEC</small>
+              <div id="timer-fill" class="timer-fill"></div>
+            </div>
+          </div>
 
-        <p id="audio-state" class="muted"></p>
-        <button id="audio-retry" type="button" hidden>음원 재생</button>
+          <div class="vinyl-stage">
+            <div class="orbit orbit-one"></div>
+            <div class="orbit orbit-two"></div>
+            <div class="vinyl">
+              <span class="vinyl-label">
+                <i>♪</i>
+                <b id="countdown" hidden></b>
+              </span>
+            </div>
+            <div class="sound-pill">
+              <span class="equalizer"
+                ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+              ></span>
+              <b>하이라이트 재생 중</b>
+            </div>
+          </div>
 
-        <!-- Host only. The player itself is parked off-screen (see #yt-stage);
-             this is the part of it anyone is meant to read. -->
-        <p id="yt-state" class="muted"></p>
-        <button id="yt-retry" type="button" hidden>영상 재생</button>
+          <div class="question-copy">
+            <span class="genre-pill">K-POP</span>
+            <h2>이 노래의 제목은?</h2>
+            <p id="audio-state" class="muted"></p>
+            <!-- 방장 화면에서만 뜹니다. 플레이어 자체는 #yt-stage 안에 숨어 있습니다. -->
+            <p id="yt-state" class="muted"></p>
+            <button id="audio-retry" type="button" class="ghost-button" hidden>음원 재생</button>
+            <button id="yt-retry" type="button" class="ghost-button" hidden>영상 재생</button>
+          </div>
 
-        <form id="answer-form" class="stack">
-          <label for="answer-input">정답</label>
-          <input id="answer-input" maxlength="100" autocomplete="off" placeholder="곡 제목을 입력하세요" />
-          <button type="submit" class="primary">제출</button>
-        </form>
-        <p id="answer-hint" class="muted"></p>
-        <p id="answer-feedback" class="feedback"></p>
+          <div id="host-controls" class="host-controls" hidden>
+            <span><i></i> HOST CONTROL</span>
+            <button id="host-pause" type="button">Ⅱ 일시정지</button>
+            <button id="host-resume" type="button" hidden>▶ 계속</button>
+            <button id="host-skip" type="button" class="skip">스킵 <b>⇥</b></button>
+          </div>
+        </section>
 
-        <div id="host-controls" class="row" hidden>
-          <button id="host-pause" type="button">일시정지</button>
-          <button id="host-resume" type="button" hidden>재개</button>
-          <button id="host-skip" type="button">스킵</button>
-        </div>
-
-        <h3>순위</h3>
-        <ol id="round-ranks" class="ranks"></ol>
+        <aside class="chat-panel panel">
+          <div class="panel-title"><div>정답 입력</div></div>
+          <div class="chat-notice">
+            <b>TIP</b>
+            <span>띄어쓰기·대소문자·특수문자는 자동으로 무시됩니다.</span>
+          </div>
+          <div class="chat-log">
+            <p id="answer-feedback" class="feedback"></p>
+          </div>
+          <form id="answer-form" class="answer-form">
+            <label for="answer-input">정답</label>
+            <div>
+              <input id="answer-input" maxlength="100" autocomplete="off" placeholder="곡 제목을 입력하세요" />
+              <button type="submit">ENTER</button>
+            </div>
+            <small id="answer-hint"></small>
+          </form>
+        </aside>
       </section>
 
       <!-- 6. 정답 공개 -------------------------------------------------------->
-      <section id="screen-reveal" class="screen" hidden>
-        <h2>정답</h2>
-        <p id="reveal-title" class="reveal-title"></p>
-        <p id="reveal-artist" class="muted"></p>
-        <p id="reveal-winner" class="feedback"></p>
-        <h3>순위</h3>
-        <ol id="reveal-ranks" class="ranks"></ol>
+      <section id="screen-reveal" class="screen game-layout page-enter" hidden>
+        <aside class="scoreboard panel">
+          <div class="panel-title"><div>RANKING</div></div>
+          <ol id="reveal-ranks" class="ranks rank-list"></ol>
+        </aside>
+
+        <section class="stage revealed">
+          <div class="answer-reveal">
+            <span>ROUND ANSWER</span>
+            <h2 id="reveal-title" class="reveal-title"></h2>
+            <p id="reveal-artist" class="muted"></p>
+            <p id="reveal-winner" class="feedback"></p>
+          </div>
+        </section>
       </section>
 
       <!-- 7. 최종 결과 -------------------------------------------------------->
-      <section id="screen-final" class="screen" hidden>
-        <h2>최종 결과</h2>
+      <section id="screen-final" class="screen results page-enter" hidden>
+        <div class="result-head">
+          <span class="eyebrow">GAME COMPLETE</span>
+          <h1>오늘의 <em>음악 왕</em>이<br />결정되었습니다.</h1>
+        </div>
         <ol id="podium" class="podium"></ol>
-        <ol id="final-ranks" class="ranks"></ol>
-        <button id="play-again" type="button">처음으로</button>
+        <section class="final-table panel">
+          <div class="panel-title"><div>FINAL RANKING</div></div>
+          <ol id="final-ranks" class="ranks table-body"></ol>
+        </section>
+        <div class="result-actions">
+          <button id="play-again" type="button" class="ghost-button">처음으로</button>
+        </div>
       </section>
     </main>
 

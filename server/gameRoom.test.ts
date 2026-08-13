@@ -14,7 +14,7 @@ import {
 import type { Effect, ServerMessage, PlayerId } from './protocol.ts';
 import { parseClientMessage } from './protocol.ts';
 import { buildSongCatalog, YOUTUBE_CLIP_MS } from '../shared/songCatalog.ts';
-import type { SongConfig } from '../shared/songCatalog.ts';
+import type { RawSongRecord, SongConfig } from '../shared/songCatalog.ts';
 
 // --- Test helpers -----------------------------------------------------------
 
@@ -766,6 +766,58 @@ test('a player who refreshes mid-round still gets no cue', () => {
   );
   assert.equal(firstOfType(privateMessagesFor(effects, guest.id), 'ROUND_CUE'), undefined);
   assert.equal(JSON.stringify(effects).includes('dQw4w9WgXcQ'), false);
+});
+
+test('a hundred-song game finishes, and scores exactly one point per answered round', () => {
+  // The size this is actually used at. Nothing here is subtle on its own; the
+  // point is that a hundred consecutive rounds of phase changes and timers
+  // still add up, and that a round nobody answers awards nothing.
+  const records: RawSongRecord[] = [];
+  for (let i = 0; i < 100; i += 1) {
+    records.push({
+      id: `s${i}`,
+      artist: `가수${i}`,
+      title: `곡${i}`,
+      youtubeId: String(i).padStart(11, 'a'),
+    });
+  }
+  const room = new GameRoom({ songs: buildSongCatalog(records).playable, now: 1_000 });
+  const players = [join(room, '하나', 1_000), join(room, '둘', 1_001), join(room, '셋', 1_002)];
+
+  let clock = 2_000;
+  room.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, clock);
+  clock += COUNTDOWN_MS;
+  room.tick(clock);
+
+  let answered = 0;
+  for (let i = 0; i < 100; i += 1) {
+    assert.equal(room.getPhase(), 'IN_ROUND', `round ${i} should be live`);
+    if (i % 7 === 0) {
+      // Every seventh round goes unanswered and must be worth nothing.
+      clock += YOUTUBE_CLIP_MS + ANSWER_GRACE_MS;
+      room.tick(clock);
+    } else {
+      clock += 5_000;
+      room.handleMessage(
+        { type: 'SUBMIT_ANSWER', guess: `곡${i}` },
+        players[i % players.length]!.id,
+        clock,
+      );
+      answered += 1;
+    }
+    clock += REVEAL_MS;
+    room.tick(clock);
+    if (room.getPhase() === 'COUNTDOWN') {
+      clock += COUNTDOWN_MS;
+      room.tick(clock);
+    }
+  }
+
+  assert.equal(room.getPhase(), 'FINISHED');
+  const total = players.reduce((sum, player) => sum + (room.getPlayer(player.id)?.score ?? 0), 0);
+  assert.equal(total, answered, 'one point per answered round, and nothing for the rest');
+  // 0..99 holds fifteen multiples of seven, so fifteen rounds go unanswered.
+  assert.equal(answered, 85);
 });
 
 test('a YouTube round is judged and revealed like any other', () => {

@@ -21,7 +21,7 @@
  * also win. Do not make any handler in this file `async`.
  */
 
-import { randomUUID, randomBytes } from 'node:crypto';
+import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createSongMatcher, toRoundPublicPayload } from '../shared/songCatalog.ts';
 import type { SongConfig } from '../shared/songCatalog.ts';
 import type { AliasMatcher } from '../shared/answerMatching.ts';
@@ -108,7 +108,8 @@ export class GameRoom {
   private phase: RoomPhase = 'LOBBY';
   private readonly players = new Map<PlayerId, Player>();
   private readonly tokenIndex = new Map<PlayerToken, PlayerId>();
-  private readonly songs: readonly SongConfig[];
+  /** Mutable only in LOBBY, through `setSongs`. */
+  private songs: readonly SongConfig[];
   private round: Round | null = null;
   private hostPlayerId: PlayerId | null = null;
   private nextSongIndex = 0;
@@ -128,6 +129,33 @@ export class GameRoom {
 
   getPhase(): RoomPhase {
     return this.phase;
+  }
+
+  getSongCount(): number {
+    return this.songs.length;
+  }
+
+  /**
+   * Replaces the songs this room will play.
+   *
+   * A room is created empty and configured afterwards, so that the catalog can
+   * be handed out against a host token rather than published (analysis §7).
+   * Refused outside LOBBY: changing the setlist mid-game would move the
+   * finish line and could swap the song a player is currently answering.
+   */
+  setSongs(songs: readonly SongConfig[]): boolean {
+    if (this.phase !== 'LOBBY') return false;
+    this.songs = songs;
+    return true;
+  }
+
+  /** Constant-time host token check, for the HTTP routes. */
+  authorize(token: string): boolean {
+    const expected = Buffer.from(this.hostToken, 'utf8');
+    const given = Buffer.from(token, 'utf8');
+    // timingSafeEqual throws on a length mismatch, and the length of a token
+    // is not a secret, so compare that first.
+    return expected.length === given.length && timingSafeEqual(expected, given);
   }
 
   getTimer(): { at: number; kind: string } | null {
@@ -289,7 +317,7 @@ export class GameRoom {
 
   private authorizeHost(token: HostToken, playerId: PlayerId | null): Effect | null {
     // Authority comes from the token, never from "whoever is connected".
-    if (token !== this.hostToken) {
+    if (!this.authorize(token)) {
       return this.errorTo(playerId, 'NOT_HOST', '방장 권한이 없습니다.');
     }
     return null;

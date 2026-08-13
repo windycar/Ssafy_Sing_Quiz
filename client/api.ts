@@ -24,14 +24,18 @@ export interface SongListResponse {
   songs: SongListEntry[];
 }
 
-export interface CreateRoomResponse {
-  roomId: string;
-  /** Secret. Store it, never display it in a shareable place (analysis §7). */
-  hostToken: string;
+/** The setlist a host just drew, and what was rejected from it. */
+export interface SetlistResponse {
   songCount: number;
   playableCount: number;
   issueCounts: Record<string, number>;
   registrationIssues: CatalogIssue[];
+}
+
+export interface CreateRoomResponse extends SetlistResponse {
+  roomId: string;
+  /** Secret. Store it, never display it in a shareable place (analysis §7). */
+  hostToken: string;
 }
 
 export interface CreateRoomBody {
@@ -46,6 +50,8 @@ export interface RoomLookupResponse {
   phase: RoomPhase;
   playerCount: number;
   joinable: boolean;
+  /** False until the host has configured a setlist. */
+  ready: boolean;
 }
 
 /** A failed request that still carried a server-authored Korean explanation. */
@@ -73,8 +79,22 @@ async function parse<T>(response: Response): Promise<T> {
   );
 }
 
-export async function fetchSongs(baseUrl = ''): Promise<SongListResponse> {
-  return parse<SongListResponse>(await fetch(`${baseUrl}/api/songs`));
+/** Header carrying the host secret. Mirrors `HOST_TOKEN_HEADER` on the server. */
+const HOST_TOKEN_HEADER = 'x-host-token';
+
+/**
+ * The song catalog, which only a room's host may read.
+ *
+ * Room-scoped rather than global because the playable set is a short list of
+ * candidate answers once a host has registered media for a handful of songs
+ * (analysis §7). A host token is the only thing that opens it.
+ */
+export async function fetchCatalog(roomId: string, hostToken: string, baseUrl = ''): Promise<SongListResponse> {
+  return parse<SongListResponse>(
+    await fetch(`${baseUrl}/api/rooms/${encodeURIComponent(roomId)}/catalog`, {
+      headers: { [HOST_TOKEN_HEADER]: hostToken },
+    }),
+  );
 }
 
 export async function createRoom(body: CreateRoomBody, baseUrl = ''): Promise<CreateRoomResponse> {
@@ -82,6 +102,22 @@ export async function createRoom(body: CreateRoomBody, baseUrl = ''): Promise<Cr
     await fetch(`${baseUrl}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/** Draws the room's setlist. Only valid while the room is still in the lobby. */
+export async function setSetlist(
+  roomId: string,
+  hostToken: string,
+  body: CreateRoomBody,
+  baseUrl = '',
+): Promise<SetlistResponse> {
+  return parse<SetlistResponse>(
+    await fetch(`${baseUrl}/api/rooms/${encodeURIComponent(roomId)}/songs`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', [HOST_TOKEN_HEADER]: hostToken },
       body: JSON.stringify(body),
     }),
   );

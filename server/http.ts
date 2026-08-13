@@ -13,8 +13,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { GameServer } from './index.ts';
-import type { CreateRoomOptions } from './index.ts';
+import type { CreateRoomOptions, GameServer, RoomCreation } from './index.ts';
 import type { StaticHandler } from './staticFiles.ts';
 import type { CatalogIssue, MediaRegistration } from '../shared/songCatalog.ts';
 
@@ -221,8 +220,8 @@ function applyCors(request: IncomingMessage, response: ServerResponse, allowedOr
 
   response.setHeader('access-control-allow-origin', origin);
   response.setHeader('vary', 'origin');
-  response.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
-  response.setHeader('access-control-allow-headers', 'content-type');
+  response.setHeader('access-control-allow-methods', 'GET, POST, PUT, OPTIONS');
+  response.setHeader('access-control-allow-headers', `content-type, ${HOST_TOKEN_HEADER}`);
   response.setHeader('access-control-max-age', '600');
   return true;
 }
@@ -287,13 +286,68 @@ export function createRequestHandler(
   };
 }
 
+/** Header carrying the host secret. Never a query parameter — those get logged. */
+export const HOST_TOKEN_HEADER = 'x-host-token';
+
+/**
+ * Resolves a room and proves the caller is its host.
+ *
+ * Answers 404 for both "no such room" and "wrong token", so this endpoint
+ * cannot be used to confirm that a guessed room code exists.
+ */
+function authorizeRoom(request: IncomingMessage, response: ServerResponse, game: GameServer, roomId: string) {
+  const room = game.getRoom(roomId);
+  const token = request.headers[HOST_TOKEN_HEADER];
+
+  if (room === undefined || typeof token !== 'string' || !room.authorize(token)) {
+    sendJson(response, 404, { error: 'ROOM_NOT_FOUND', message: '방을 찾을 수 없거나 방장 권한이 없습니다.' });
+    return null;
+  }
+  return room;
+}
+
 async function handleApi(
   request: IncomingMessage,
   response: ServerResponse,
   pathname: string,
   game: GameServer,
 ): Promise<void> {
-  if (pathname === '/api/songs' && request.method === 'GET') {
+  if (pathname === '/api/rooms' && request.method === 'POST') {
+    if (game.roomCount() >= MAX_ROOMS) {
+      sendJson(response, 503, { error: 'TOO_MANY_ROOMS', message: '서버가 수용 가능한 방 수를 초과했습니다.' });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    if (!body.ok) {
+      sendJson(response, 400, { error: 'INVALID_BODY', message: body.message });
+      return;
+    }
+    const parsed = parseCreateRoomRequest(body.value);
+    if (!parsed.ok) {
+      sendJson(response, 400, { error: 'INVALID_BODY', message: parsed.message });
+      return;
+    }
+
+    // A room may legitimately start with no playable songs: the host needs its
+    // token before they can read the catalog and register media. `HOST_START`
+    // is the gate that refuses to run an empty setlist.
+    const created = game.createRoom(parsed.value);
+    sendJson(response, 201, {
+      roomId: created.room.roomId,
+      // The only time this value ever leaves the server. It is not broadcast,
+      // not logged, and not recoverable — losing it means losing the room.
+      hostToken: created.room.hostToken,
+      ...songSummary(created, parsed.value),
+    });
+    return;
+  }
+
+  const catalogMatch = /^\/api\/rooms\/([^/]+)\/catalog$/u.exec(pathname);
+  if (catalogMatch !== null && request.method === 'GET') {
+    const room = authorizeRoom(request, response, game, decodeURIComponent(catalogMatch[1] as string));
+    if (room === null) return;
+
     const playable = new Set(game.baseCatalog.playable.map((song) => song.id));
     // First issue per song: the catalog stops at the first blocker anyway, so
     // showing more than one would imply a checklist the builder does not run.
@@ -317,11 +371,10 @@ async function handleApi(
     return;
   }
 
-  if (pathname === '/api/rooms' && request.method === 'POST') {
-    if (game.roomCount() >= MAX_ROOMS) {
-      sendJson(response, 503, { error: 'TOO_MANY_ROOMS', message: '서버가 수용 가능한 방 수를 초과했습니다.' });
-      return;
-    }
+  const songsMatch = /^\/api\/rooms\/([^/]+)\/songs$/u.exec(pathname);
+  if (songsMatch !== null && request.method === 'PUT') {
+    const room = authorizeRoom(request, response, game, decodeURIComponent(songsMatch[1] as string));
+    if (room === null) return;
 
     const body = await readJsonBody(request);
     if (!body.ok) {
@@ -334,29 +387,12 @@ async function handleApi(
       return;
     }
 
-    const created = game.createRoom(parsed.value);
-    if (created.songCount === 0) {
-      sendJson(response, 400, {
-        error: 'NO_PLAYABLE_SONGS',
-        message: '재생 가능한 곡이 없습니다. 음원 URL과 재생 구간(5~15초)을 등록해 주세요.',
-        issues: summarizeIssues(created.catalog.issues),
-      });
+    const configured = game.configureRoom(room, parsed.value);
+    if (configured === null) {
+      sendJson(response, 409, { error: 'GAME_ALREADY_STARTED', message: '게임이 시작된 뒤에는 곡을 바꿀 수 없습니다.' });
       return;
     }
-
-    const registered = new Set((parsed.value.media ?? []).map((entry) => entry.id));
-    sendJson(response, 201, {
-      roomId: created.room.roomId,
-      // The only time this value ever leaves the server. It is not broadcast,
-      // not logged, and not recoverable — losing it means losing the room.
-      hostToken: created.room.hostToken,
-      songCount: created.songCount,
-      playableCount: created.catalog.playable.length,
-      issueCounts: summarizeIssues(created.catalog.issues),
-      // Per-song detail only for what this host just registered; the rest they
-      // already saw on /api/songs.
-      registrationIssues: created.catalog.issues.filter((issue) => registered.has(issue.songId)),
-    });
+    sendJson(response, 200, songSummary(configured, parsed.value));
     return;
   }
 
@@ -375,11 +411,25 @@ async function handleApi(
       phase: room.getPhase(),
       playerCount: game.connectedCount(roomId),
       joinable: room.getPhase() === 'LOBBY',
+      ready: room.getSongCount() > 0,
     });
     return;
   }
 
   sendJson(response, 404, { error: 'NOT_FOUND', message: '경로를 찾을 수 없습니다.' });
+}
+
+/** What a host learns about their setlist after creating or configuring it. */
+function songSummary(created: RoomCreation, options: CreateRoomOptions): Record<string, unknown> {
+  const registered = new Set((options.media ?? []).map((entry) => entry.id));
+  return {
+    songCount: created.songCount,
+    playableCount: created.catalog.playable.length,
+    issueCounts: summarizeIssues(created.catalog.issues),
+    // Per-song detail only for what this host just registered; the rest they
+    // already saw on the catalog endpoint.
+    registrationIssues: created.catalog.issues.filter((issue) => registered.has(issue.songId)),
+  };
 }
 
 function summarizeIssues(issues: readonly CatalogIssue[]): Record<string, number> {

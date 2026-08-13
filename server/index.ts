@@ -117,10 +117,10 @@ export class GameServer {
   /**
    * Every song the server knows about, playable or not.
    *
-   * Titles leave the process here, which is deliberate and bounded: a host
-   * cannot register media for a song they cannot see. This is the candidate
-   * *pool*, never a room's draw — see `selectSongs` for why that distinction
-   * is what keeps it from being an answer leak.
+   * Titles leave the process here, so every caller must be behind a host token
+   * check. Publishing this openly is a real leak once a host has registered
+   * media for only a handful of songs: the playable set would then be a short
+   * list of candidate answers for the round in progress.
    */
   listSongs(): { id: string; title: string; artist: string }[] {
     return this.songs.map((song) => ({
@@ -138,6 +138,22 @@ export class GameServer {
     const room = new GameRoom({ songs, now });
     this.rooms.set(room.roomId, room);
     this.touchedAt.set(room.roomId, now);
+    return { room, catalog, songCount: songs.length };
+  }
+
+  /**
+   * Re-draws an existing room's setlist from host-supplied media.
+   *
+   * Separate from creation because the catalog is only readable with a host
+   * token, and a host has no token until the room exists. Returns null when
+   * the room is past LOBBY and its setlist is therefore frozen.
+   */
+  configureRoom(room: GameRoom, options: CreateRoomOptions = {}): RoomCreation | null {
+    const catalog = this.buildCatalog(options.media ?? []);
+    const songs = selectSongs(catalog.playable, options);
+    if (!room.setSongs(songs)) return null;
+
+    this.touchedAt.set(room.roomId, options.now ?? Date.now());
     return { room, catalog, songCount: songs.length };
   }
 

@@ -160,16 +160,28 @@ test('a room creation response never contains a song title', async () => {
   });
 });
 
+/** Creates a room and returns its id and host token. */
+async function createRoom(base: string, body: unknown = {}): Promise<{ roomId: string; hostToken: string }> {
+  const response = await fetch(`${base}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  assert.equal(response.status, 201);
+  return (await response.json()) as { roomId: string; hostToken: string };
+}
+
 test('host media registration turns an unplayable song into a playable one', async () => {
   await withServer(async ({ base }) => {
-    const response = await fetch(`${base}/api/rooms`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+    const { roomId, hostToken } = await createRoom(base);
+    const response = await fetch(`${base}/api/rooms/${roomId}/songs`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-host-token': hostToken },
       body: JSON.stringify({
         media: [{ id: 'blank', mediaUrl: 'https://cdn.example/dynamite.mp3', clipStart: 30, clipEnd: 40 }],
       }),
     });
-    assert.equal(response.status, 201);
+    assert.equal(response.status, 200);
 
     const body = (await response.json()) as { playableCount: number; registrationIssues: unknown[] };
     // 'ready' was already playable; 'blank' just became so.
@@ -180,14 +192,15 @@ test('host media registration turns an unplayable song into a playable one', asy
 
 test('a clip outside the 5-15s range is reported per song rather than failing the request', async () => {
   await withServer(async ({ base }) => {
-    const response = await fetch(`${base}/api/rooms`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+    const { roomId, hostToken } = await createRoom(base);
+    const response = await fetch(`${base}/api/rooms/${roomId}/songs`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-host-token': hostToken },
       body: JSON.stringify({
         media: [{ id: 'blank', mediaUrl: 'https://cdn.example/x.mp3', clipStart: 0, clipEnd: 60 }],
       }),
     });
-    assert.equal(response.status, 201);
+    assert.equal(response.status, 200);
 
     const body = (await response.json()) as { playableCount: number; registrationIssues: { code: string }[] };
     assert.equal(body.playableCount, 1);
@@ -195,18 +208,42 @@ test('a clip outside the 5-15s range is reported per song rather than failing th
   });
 });
 
-test('creating a room with nothing playable is refused with an explanation', async () => {
+test('a room with nothing playable is created anyway, so its host can fix it', async () => {
   await withServer(
-    async ({ base }) => {
-      const response = await fetch(`${base}/api/rooms`, { method: 'POST' });
-      assert.equal(response.status, 400);
+    async ({ base, game }) => {
+      // The host needs their token before they may read the catalog, so
+      // refusing creation here would leave them with no way forward.
+      const { roomId } = await createRoom(base);
+      const room = game.getRoom(roomId);
+      assert.equal(room?.getSongCount(), 0);
 
-      const body = (await response.json()) as { error: string; issues: Record<string, number> };
-      assert.equal(body.error, 'NO_PLAYABLE_SONGS');
-      assert.equal(body.issues['MISSING_MEDIA_URL'], 1);
+      const lookup = (await (await fetch(`${base}/api/rooms/${roomId}`)).json()) as { ready: boolean };
+      assert.equal(lookup.ready, false, 'a joining player can see the room is not configured yet');
+
+      // Starting is what gets refused, by the engine.
+      const denied = room?.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 0);
+      assert.equal(denied?.[0]?.kind === 'send' && denied[0].message.type === 'ERROR', true);
     },
     { songs: [SONGS[1] as RawSongRecord] },
   );
+});
+
+test('the setlist is frozen once the game starts', async () => {
+  await withServer(async ({ base, game }) => {
+    const { roomId, hostToken } = await createRoom(base, { songCount: 1 });
+    const room = game.getRoom(roomId);
+    assert.ok(room);
+
+    room.handleMessage({ type: 'JOIN_ROOM', roomId, nickname: '방장' }, null, 0);
+    room.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 0);
+
+    const response = await fetch(`${base}/api/rooms/${roomId}/songs`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-host-token': hostToken },
+      body: JSON.stringify({ songCount: 1 }),
+    });
+    assert.equal(response.status, 409);
+  });
 });
 
 test('a malformed or oversized body is refused with 400', async () => {
@@ -256,6 +293,7 @@ test('GET /api/rooms/:id tells a join screen only whether the code is usable', a
       phase: 'LOBBY',
       playerCount: 0,
       joinable: true,
+      ready: true,
     });
 
     const missing = await fetch(`${base}/api/rooms/nope`);
@@ -263,9 +301,12 @@ test('GET /api/rooms/:id tells a join screen only whether the code is usable', a
   });
 });
 
-test('GET /api/songs reports playability per song and never leaks aliases', async () => {
+test('the catalog reports playability per song and never leaks aliases', async () => {
   await withServer(async ({ base }) => {
-    const response = await fetch(`${base}/api/songs`);
+    const { roomId, hostToken } = await createRoom(base);
+    const response = await fetch(`${base}/api/rooms/${roomId}/catalog`, {
+      headers: { 'x-host-token': hostToken },
+    });
     const body = (await response.json()) as {
       total: number;
       playableCount: number;
@@ -278,6 +319,49 @@ test('GET /api/songs reports playability per song and never leaks aliases', asyn
     assert.equal(body.songs.find((song) => song.id === 'blank')?.issue?.code, 'MISSING_MEDIA_URL');
     // Titles are the point of this endpoint; the accepted-answer set is not.
     assert.equal(JSON.stringify(body).includes('aliases'), false);
+  });
+});
+
+test('the catalog is unreachable without the room host token', async () => {
+  await withServer(async ({ base }) => {
+    const { roomId, hostToken } = await createRoom(base);
+    const other = await createRoom(base);
+
+    // Once a host has registered media for a handful of songs, the playable set
+    // is a short list of candidate answers. A player in the room must not be
+    // able to read it.
+    const attempts: Record<string, string>[] = [
+      {},
+      { 'x-host-token': 'guessed' },
+      { 'x-host-token': other.hostToken },
+    ];
+    for (const headers of attempts) {
+      const denied = await fetch(`${base}/api/rooms/${roomId}/catalog`, { headers });
+      assert.equal(denied.status, 404, `expected refusal for ${JSON.stringify(headers)}`);
+      assert.equal((await denied.text()).includes('좋은 날'), false);
+    }
+
+    // A near-miss of the right length must not pass either — the comparison is
+    // constant time, not a prefix check.
+    const nearMiss = `${hostToken.slice(0, -1)}${hostToken.endsWith('A') ? 'B' : 'A'}`;
+    const refused = await fetch(`${base}/api/rooms/${roomId}/catalog`, { headers: { 'x-host-token': nearMiss } });
+    assert.equal(refused.status, 404);
+
+    // The legitimate host still gets in.
+    const allowed = await fetch(`${base}/api/rooms/${roomId}/catalog`, { headers: { 'x-host-token': hostToken } });
+    assert.equal(allowed.status, 200);
+  });
+});
+
+test('the setlist route rejects a wrong host token', async () => {
+  await withServer(async ({ base }) => {
+    const { roomId } = await createRoom(base);
+    const response = await fetch(`${base}/api/rooms/${roomId}/songs`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-host-token': 'not-the-token' },
+      body: JSON.stringify({ songCount: 1 }),
+    });
+    assert.equal(response.status, 404);
   });
 });
 
@@ -346,11 +430,17 @@ test('path traversal and unlisted file types are refused', async () => {
 
 test('an API call from a disallowed origin is refused', async () => {
   await withServer(
-    async ({ base }) => {
-      const blocked = await fetch(`${base}/api/songs`, { headers: { origin: 'https://evil.invalid' } });
+    async ({ base, game }) => {
+      const { room } = game.createRoom({ songCount: 1 });
+
+      const blocked = await fetch(`${base}/api/rooms/${room.roomId}`, {
+        headers: { origin: 'https://evil.invalid' },
+      });
       assert.equal(blocked.status, 403);
 
-      const allowed = await fetch(`${base}/api/songs`, { headers: { origin: 'https://quiz.example' } });
+      const allowed = await fetch(`${base}/api/rooms/${room.roomId}`, {
+        headers: { origin: 'https://quiz.example' },
+      });
       assert.equal(allowed.status, 200);
       assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://quiz.example');
     },

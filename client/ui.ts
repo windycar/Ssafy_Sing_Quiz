@@ -23,7 +23,7 @@
 
 import { ProtocolClient } from './protocolClient.ts';
 import type { ClientState } from './protocolClient.ts';
-import { ApiError, createRoom, fetchSongs, lookupRoom } from './api.ts';
+import { ApiError, createRoom, fetchCatalog, lookupRoom, setSetlist } from './api.ts';
 import type { SongListEntry } from './api.ts';
 import type { LeaderboardEntry, ServerMessage } from '../server/protocol.ts';
 import type { MediaRegistration } from '../shared/songCatalog.ts';
@@ -39,7 +39,7 @@ function el<T extends HTMLElement>(id: string): T {
   return node as T;
 }
 
-const SCREENS = ['home', 'setup', 'invite', 'lobby', 'round', 'reveal', 'final'] as const;
+const SCREENS = ['home', 'setup', 'lobby', 'round', 'reveal', 'final'] as const;
 type Screen = (typeof SCREENS)[number];
 
 function showScreen(name: Screen): void {
@@ -268,10 +268,10 @@ function collectRegistrations(): { media: MediaRegistration[]; skipped: number }
   return { media, skipped };
 }
 
-async function loadCatalog(): Promise<void> {
+async function loadCatalog(roomId: string, token: string): Promise<void> {
   const summary = el('catalog-summary');
   try {
-    const response = await fetchSongs();
+    const response = await fetchCatalog(roomId, token);
     catalogSongs = response.songs;
     summary.textContent = `전체 ${response.total}곡 중 재생 가능 ${response.playableCount}곡.`;
     if (response.playableCount === 0) {
@@ -290,6 +290,8 @@ async function loadCatalog(): Promise<void> {
 
 let client: ProtocolClient | null = null;
 let hostToken: string | null = null;
+/** The room being configured on the setup screen, before anyone has joined. */
+let setupRoomId: string | null = null;
 const player = new ClipPlayer();
 
 function socketUrl(): string {
@@ -573,45 +575,63 @@ async function copy(text: string, label: string): Promise<void> {
 }
 
 function wire(): void {
+  // Creating the room comes first now, because the catalog is only readable
+  // with a host token and the token does not exist until the room does.
   el('go-setup').addEventListener('click', () => {
-    showScreen('setup');
-    void loadCatalog();
+    void (async () => {
+      const button = el<HTMLButtonElement>('go-setup');
+      button.disabled = true;
+      try {
+        const created = await createRoom({});
+        writeStorage(hostKey(created.roomId), created.hostToken);
+        hostToken = created.hostToken;
+        setupRoomId = created.roomId;
+
+        el('invite-code').textContent = created.roomId;
+        el<HTMLInputElement>('invite-link').value = inviteLink(created.roomId);
+        el('setlist-summary').textContent = '';
+        location.hash = `room=${encodeURIComponent(created.roomId)}`;
+        showScreen('setup');
+        await loadCatalog(created.roomId, created.hostToken);
+      } catch (caught) {
+        toast(caught instanceof ApiError ? caught.message : '방을 만들지 못했습니다.');
+      } finally {
+        button.disabled = false;
+      }
+    })();
   });
 
-  el('setup-back').addEventListener('click', () => showScreen('home'));
   el('song-filter').addEventListener('input', renderSongList);
 
-  el('create-room').addEventListener('click', () => {
+  el('save-setlist').addEventListener('click', () => {
     void (async () => {
-      const button = el<HTMLButtonElement>('create-room');
+      const button = el<HTMLButtonElement>('save-setlist');
       const error = el('setup-error');
       const { media, skipped } = collectRegistrations();
+      if (setupRoomId === null || hostToken === null) return;
 
       button.disabled = true;
       error.hidden = true;
       try {
-        const created = await createRoom({
+        const setlist = await setSetlist(setupRoomId, hostToken, {
           songCount: Number(el<HTMLInputElement>('song-count').value) || 5,
           media,
         });
 
-        writeStorage(hostKey(created.roomId), created.hostToken);
-        hostToken = created.hostToken;
+        el('setlist-summary').textContent =
+          setlist.songCount === 0
+            ? '재생 가능한 곡이 없습니다. 음원을 등록해야 게임을 시작할 수 있습니다.'
+            : `${setlist.songCount}곡으로 진행합니다. (재생 가능한 곡 ${setlist.playableCount}곡` +
+              (skipped > 0 ? `, 입력이 덜 된 ${skipped}곡은 제외` : '') +
+              ')';
 
-        el('invite-code').textContent = created.roomId;
-        el<HTMLInputElement>('invite-link').value = inviteLink(created.roomId);
-        el('invite-songs').textContent =
-          `${created.songCount}곡으로 진행합니다. (재생 가능한 곡 ${created.playableCount}곡` +
-          (skipped > 0 ? `, 입력이 덜 된 ${skipped}곡은 제외` : '') +
-          ')';
-
-        if (created.registrationIssues.length > 0) {
-          toast(`등록한 음원 중 ${created.registrationIssues.length}곡이 조건을 만족하지 않아 제외되었습니다.`);
+        if (setlist.registrationIssues.length > 0) {
+          toast(`등록한 음원 중 ${setlist.registrationIssues.length}곡이 조건을 만족하지 않아 제외되었습니다.`);
         }
-        location.hash = `room=${encodeURIComponent(created.roomId)}`;
-        showScreen('invite');
+        // The catalog changed: songs that just became playable should show it.
+        await loadCatalog(setupRoomId, hostToken);
       } catch (caught) {
-        error.textContent = caught instanceof ApiError ? caught.message : '방을 만들지 못했습니다.';
+        error.textContent = caught instanceof ApiError ? caught.message : '곡 설정을 저장하지 못했습니다.';
         error.hidden = false;
       } finally {
         button.disabled = false;
@@ -624,16 +644,14 @@ function wire(): void {
   });
 
   el('copy-host').addEventListener('click', () => {
-    const roomId = el('invite-code').textContent ?? '';
-    if (hostToken === null) return;
-    void copy(`${inviteLink(roomId)}&host=${encodeURIComponent(hostToken)}`, '방장 링크');
+    if (hostToken === null || setupRoomId === null) return;
+    void copy(`${inviteLink(setupRoomId)}&host=${encodeURIComponent(hostToken)}`, '방장 링크');
   });
 
   el<HTMLFormElement>('host-enter-form').addEventListener('submit', (event) => {
     event.preventDefault();
-    const roomId = el('invite-code').textContent ?? '';
-    if (roomId === '') return;
-    connect(roomId, { nickname: el<HTMLInputElement>('host-nickname').value });
+    if (setupRoomId === null) return;
+    connect(setupRoomId, { nickname: el<HTMLInputElement>('host-nickname').value });
   });
 
   el<HTMLFormElement>('join-form').addEventListener('submit', (event) => {
@@ -649,6 +667,9 @@ function wire(): void {
           toast('이미 시작된 방에는 참여할 수 없습니다.');
           return;
         }
+        // Joining early is fine — the host may still be picking songs — but say
+        // so, otherwise the lobby looks broken when start does nothing.
+        if (!room.ready) toast('방장이 아직 곡을 고르는 중입니다. 대기실에서 기다려 주세요.');
       } catch (caught) {
         toast(caught instanceof ApiError ? caught.message : '방을 확인하지 못했습니다.');
         return;
@@ -733,6 +754,20 @@ function bootstrap(): void {
   const stored = readStorage(sessionKey(roomId));
   if (stored !== null) {
     connect(roomId, { playerToken: stored });
+    return;
+  }
+
+  // A host token but no player session: this tab created the room (or opened a
+  // host link) and has not entered it yet. Put them back on the setup screen
+  // rather than making them type their own join code.
+  const storedHost = readStorage(hostKey(roomId));
+  if (storedHost !== null) {
+    hostToken = storedHost;
+    setupRoomId = roomId;
+    el('invite-code').textContent = roomId;
+    el<HTMLInputElement>('invite-link').value = inviteLink(roomId);
+    showScreen('setup');
+    void loadCatalog(roomId, storedHost);
     return;
   }
 

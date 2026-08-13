@@ -201,6 +201,8 @@ export interface RoundResumedMessage {
 export interface AnswerAcceptedMessage {
   type: 'ANSWER_ACCEPTED';
   pointsAwarded: number;
+  /** 1, 2 or 3 — where this player came in on this round. */
+  place: number;
 }
 
 export interface AnswerRejectedMessage {
@@ -217,10 +219,24 @@ export interface AnswerTooLateMessage {
   type: 'ANSWER_TOO_LATE';
 }
 
+/** One player who answered correctly, and where they came in. */
+export interface RoundScorer {
+  playerId: PlayerId;
+  nickname: string;
+  place: number;
+  pointsAwarded: number;
+}
+
 export interface RoundRevealMessage {
   type: 'ROUND_REVEAL';
   song: SongRevealInfo;
+  /**
+   * First place, or null when nobody got it. Kept alongside `scorers` because
+   * every screen highlights the winner and most show nothing else.
+   */
   winner: { playerId: PlayerId; nickname: string } | null;
+  /** Everyone who scored, in the order they answered. Empty if nobody did. */
+  scorers: RoundScorer[];
   leaderboard: LeaderboardEntry[];
 }
 

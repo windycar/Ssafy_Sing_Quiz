@@ -30,6 +30,7 @@ import type {
   PlayerSummary,
   PlayerToken,
   RoomPhase,
+  RoundScorer,
   ServerMessage,
   SongPublicInfo,
 } from '../server/protocol.ts';
@@ -87,12 +88,14 @@ export interface RevealView {
   title: string;
   artist: string;
   winner: { playerId: PlayerId; nickname: string } | null;
+  /** Everyone who scored, first to last. Empty when nobody got it. */
+  scorers: RoundScorer[];
 }
 
 /** The verdict on this player's own guess. Never says anything about others. */
 export type AnswerFeedback =
   | { kind: 'none' }
-  | { kind: 'accepted'; pointsAwarded: number }
+  | { kind: 'accepted'; pointsAwarded: number; place: number }
   | { kind: 'rejected'; guess: string }
   | { kind: 'tooLate' };
 
@@ -287,7 +290,7 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
     case 'ANSWER_ACCEPTED':
       return {
         ...state,
-        answerFeedback: { kind: 'accepted', pointsAwarded: message.pointsAwarded },
+        answerFeedback: { kind: 'accepted', pointsAwarded: message.pointsAwarded, place: message.place },
         answeredThisRound: true,
       };
 
@@ -302,7 +305,12 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
       return {
         ...state,
         phase: 'REVEAL',
-        reveal: { title: message.song.title, artist: message.song.artist, winner: message.winner },
+        reveal: {
+          title: message.song.title,
+          artist: message.song.artist,
+          winner: message.winner,
+          scorers: message.scorers,
+        },
         leaderboard: message.leaderboard,
         // Keep the roster's scores in step with the leaderboard so a caller can
         // render either one without them disagreeing.

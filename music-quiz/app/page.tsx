@@ -41,6 +41,9 @@ type Draft = { mediaUrl: string; clipStart: string; clipEnd: string };
 
 const AVATAR = (nickname: string): string => nickname.trim().slice(0, 1) || "?";
 
+/** Only as many places as the server actually scores. */
+const ORDINAL: Record<number, string> = { 1: "1st", 2: "2nd", 3: "3rd" };
+
 export default function Home() {
   const [state, setState] = useState<ClientState | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -731,17 +734,15 @@ export default function Home() {
                 {/* The first moment the title exists on this client. */}
                 <h2>{state.reveal.title}</h2>
                 <p>{state.reveal.artist}</p>
-                {state.reveal.winner !== null && (
-                  <div className="winner-chip">
-                    <i>1st</i>
-                    <b>{state.reveal.winner.nickname}</b>
-                    <span>
-                      {state.answerFeedback.kind === "accepted"
-                        ? `+${state.answerFeedback.pointsAwarded} PTS`
-                        : "정답"}
-                    </span>
+                {/* Every scorer, not just the winner: second and third earned
+                    points too and should see themselves named. */}
+                {state.reveal.scorers.map((entry) => (
+                  <div className="winner-chip" key={entry.playerId}>
+                    <i>{ORDINAL[entry.place] ?? `${entry.place}th`}</i>
+                    <b>{entry.playerId === state.playerId ? "나" : entry.nickname}</b>
+                    <span>+{entry.pointsAwarded} PTS</span>
                   </div>
-                )}
+                ))}
               </div>
             ) : (
               <div className="question-copy">
@@ -945,7 +946,7 @@ function Feedback({ state }: { state: ClientState | null }) {
       <div className="system-message">
         <i>✓</i>
         <p>
-          <b>정답입니다!</b> +{feedback.pointsAwarded}점
+          <b>정답입니다!</b> {feedback.place}등 +{feedback.pointsAwarded}점
         </p>
       </div>
     );
@@ -965,7 +966,7 @@ function Feedback({ state }: { state: ClientState | null }) {
   return (
     <div className="system-message">
       <i>—</i>
-      <p>이미 다른 참가자가 맞혔습니다.</p>
+      <p>이번 라운드에서는 더 이상 점수를 받을 수 없습니다.</p>
     </div>
   );
 }

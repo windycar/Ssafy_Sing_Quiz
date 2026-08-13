@@ -176,11 +176,20 @@ test('two clients play a full round over real sockets', async () => {
     assert.equal(host.countOf('ANSWER_REJECTED'), 0);
 
     guest.send({ type: 'SUBMIT_ANSWER', guess: '다이나 마이트' });
-    await guest.waitFor('ANSWER_ACCEPTED');
+    const accepted = await guest.waitFor('ANSWER_ACCEPTED');
+    assert.equal(accepted.place, 1);
+    assert.equal(accepted.pointsAwarded, 100);
+    // Second and third place are unclaimed, so the round is still running and
+    // the host has heard nothing about it.
+    assert.equal(host.countOf('ROUND_REVEAL'), 0);
+
+    // With two players in the room, the host closes it.
+    host.send({ type: 'HOST_SKIP', hostToken: room.hostToken });
 
     const reveal = await host.waitFor('ROUND_REVEAL');
     assert.equal(reveal.song.title, 'Dynamite');
     assert.equal(reveal.winner?.nickname, '참가자');
+    assert.equal(reveal.scorers.length, 1);
 
     // Per-recipient leaderboard payloads.
     const hostUpdate = await host.waitFor('LEADERBOARD_UPDATE');

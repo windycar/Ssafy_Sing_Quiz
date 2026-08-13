@@ -388,6 +388,27 @@ summary {
   max-width: min(34rem, 90vw);
 }
 
+/*
+  The YouTube player on the host machine.
+
+  Not `display: none` and not `visibility: hidden`: browsers refuse to start,
+  or quietly throttle, media in a element that is not rendered, and this one
+  has to make sound on cue. It is rendered at a real size, pinned behind the
+  page and at an opacity low enough to read as nothing on a projector. The
+  video and its title are the answer, so nothing here may become visible.
+*/
+#yt-stage {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  height: 180px;
+  opacity: 0.01;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
 @media (max-width: 34rem) {
   .song-media {
     grid-template-columns: 1fr;

@@ -178,6 +178,176 @@ class ClipPlayer {
 }
 
 // ---------------------------------------------------------------------------
+// YouTube playback (host only)
+// ---------------------------------------------------------------------------
+
+/** The slice of the IFrame API this file uses. */
+interface YTPlayer {
+  loadVideoById(options: { videoId: string; startSeconds: number; endSeconds: number }): void;
+  playVideo(): void;
+  pauseVideo(): void;
+  stopVideo(): void;
+  setVolume(volume: number): void;
+}
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (element: HTMLElement | string, options: Record<string, unknown>) => YTPlayer;
+      PlayerState: { ENDED: number; PLAYING: number };
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+const IFRAME_API_SRC = 'https://www.youtube.com/iframe_api';
+
+/** Loads the IFrame API once, and resolves every caller when it is ready. */
+let apiReady: Promise<void> | null = null;
+function loadIframeApi(): Promise<void> {
+  if (apiReady !== null) return apiReady;
+  apiReady = new Promise<void>((resolve, reject) => {
+    if (window.YT?.Player !== undefined) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = IFRAME_API_SRC;
+    script.async = true;
+    script.addEventListener('error', () => reject(new Error('iframe api')));
+    window.onYouTubeIframeAPIReady = () => resolve();
+    document.head.append(script);
+  });
+  return apiReady;
+}
+
+/**
+ * Plays the round's video on the host machine, with the picture hidden.
+ *
+ * The front computer's screen is visible to the room, so showing the video
+ * would show the answer — the title sits in the player chrome and the music
+ * video itself is usually a bigger giveaway. The iframe is therefore parked
+ * off to the side at almost zero opacity and behind everything else: it still
+ * counts as rendered, which is what keeps browsers willing to play it, while
+ * being invisible from any seat in the room.
+ *
+ * Only ever driven by `RoundView.cue`, which only the host receives.
+ */
+class YouTubePlayer {
+  private readonly mount = el('yt-mount');
+  private readonly state = el('yt-state');
+  private readonly retry = el<HTMLButtonElement>('yt-retry');
+  private player: YTPlayer | null = null;
+  private pending: { videoId: string; startSeconds: number; endSeconds: number } | null = null;
+
+  constructor() {
+    this.retry.addEventListener('click', () => {
+      this.retry.hidden = true;
+      this.player?.playVideo();
+      this.state.textContent = '재생 중';
+    });
+  }
+
+  async start(videoId: string, startMs: number, playMs: number): Promise<void> {
+    const request = {
+      videoId,
+      startSeconds: Math.round(startMs / 1000),
+      endSeconds: Math.round((startMs + playMs) / 1000),
+    };
+    this.pending = request;
+    this.retry.hidden = true;
+    this.state.textContent = '영상을 불러오는 중…';
+
+    try {
+      await loadIframeApi();
+    } catch {
+      this.state.textContent = '유튜브에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.';
+      return;
+    }
+
+    // Another round may have started while the API was loading.
+    if (this.pending !== request) return;
+
+    if (this.player === null) {
+      this.player = this.create(request);
+      return;
+    }
+    this.player.loadVideoById(request);
+    this.player.playVideo();
+    this.state.textContent = '재생 중';
+  }
+
+  pause(): void {
+    this.player?.pauseVideo();
+  }
+
+  resume(): void {
+    this.player?.playVideo();
+  }
+
+  stop(): void {
+    this.pending = null;
+    this.player?.stopVideo();
+    this.state.textContent = '';
+    this.retry.hidden = true;
+  }
+
+  private create(request: { videoId: string; startSeconds: number; endSeconds: number }): YTPlayer {
+    const YT = window.YT;
+    if (YT === undefined) throw new Error('iframe api not ready');
+
+    return new YT.Player(this.mount, {
+      videoId: request.videoId,
+      playerVars: {
+        autoplay: 1,
+        start: request.startSeconds,
+        end: request.endSeconds,
+        controls: 0,
+        disablekb: 1,
+        modestbranding: 1,
+        rel: 0,
+        // Related videos and the end screen would name other songs.
+        iv_load_policy: 3,
+      },
+      events: {
+        onReady: (event: { target: YTPlayer }) => {
+          event.target.setVolume(100);
+          event.target.playVideo();
+          this.state.textContent = '재생 중';
+        },
+        onStateChange: (event: { data: number }) => {
+          // Autoplay blocked leaves the player parked rather than playing.
+          if (event.data === YT.PlayerState.PLAYING) this.retry.hidden = true;
+        },
+        onError: (event: { data: number }) => {
+          this.state.textContent = describeYouTubeError(event.data);
+          this.retry.hidden = false;
+        },
+      },
+    });
+  }
+}
+
+/**
+ * The two that matter in practice are 101/150: the uploader disallowed
+ * embedding, so the video plays on youtube.com and nowhere else. A host needs
+ * to hear that in time to swap the link, not after the round is ruined.
+ */
+function describeYouTubeError(code: number): string {
+  switch (code) {
+    case 101:
+    case 150:
+      return '이 영상은 외부 재생이 막혀 있습니다. 다른 링크로 바꿔 주세요.';
+    case 100:
+      return '삭제되었거나 비공개인 영상입니다.';
+    case 2:
+      return '영상 주소가 올바르지 않습니다.';
+    default:
+      return `영상을 재생할 수 없습니다 (오류 ${code}).`;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Host setup: catalog and media registration
 // ---------------------------------------------------------------------------
 
@@ -293,6 +463,7 @@ let hostToken: string | null = null;
 /** The room being configured on the setup screen, before anyone has joined. */
 let setupRoomId: string | null = null;
 const player = new ClipPlayer();
+const youtube = new YouTubePlayer();
 
 function socketUrl(): string {
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -319,17 +490,27 @@ function connect(roomId: string, options: { nickname?: string; playerToken?: str
 function handleEvent(message: ServerMessage): void {
   switch (message.type) {
     case 'ROUND_START':
-      void player.start(message.mediaUrl, message.clipStartMs, message.clipEndMs);
+      // On a live-playback round there is no URL and nothing for a player to
+      // play: the host's ROUND_CUE arrives separately and drives the video.
+      if (!message.livePlayback) {
+        void player.start(message.mediaUrl, message.clipStartMs, message.clipEndMs);
+      }
+      break;
+    case 'ROUND_CUE':
+      void youtube.start(message.youtubeId, message.startMs, message.playMs);
       break;
     case 'ROUND_PAUSED':
       player.pause();
+      youtube.pause();
       break;
     case 'ROUND_RESUMED':
       void player.resume();
+      youtube.resume();
       break;
     case 'ROUND_REVEAL':
     case 'GAME_OVER':
       player.stop();
+      youtube.stop();
       break;
     case 'ERROR':
       toast(message.message);
@@ -407,7 +588,7 @@ function renderFeedback(state: ClientState): void {
 
   switch (state.answerFeedback.kind) {
     case 'accepted':
-      node.textContent = `정답입니다! +${state.answerFeedback.pointsAwarded}점`;
+      node.textContent = `정답입니다! ${state.answerFeedback.place}등 +${state.answerFeedback.pointsAwarded}점`;
       node.classList.add('ok');
       break;
     case 'rejected':
@@ -416,7 +597,10 @@ function renderFeedback(state: ClientState): void {
       break;
     case 'tooLate':
       // The server deliberately does not say whether this guess was right.
-      node.textContent = '이미 다른 참가자가 맞혔습니다.';
+      // Covers both "the places are gone" and "you already took one", without
+      // distinguishing them — either verdict would say something about the
+      // answer to a player who is still guessing.
+      node.textContent = '이번 라운드에서는 더 이상 점수를 받을 수 없습니다.';
       break;
     default:
       node.textContent = '';
@@ -469,20 +653,21 @@ function render(state: ClientState): void {
       el('reveal-title').textContent = state.reveal?.title ?? '';
       el('reveal-artist').textContent = state.reveal?.artist ?? '';
 
-      // The server sends ANSWER_ACCEPTED and ROUND_REVEAL in the same batch, so
-      // the winner's own "+100점" would otherwise be painted and replaced
-      // within a millisecond. Restate it here, where it stays on screen.
-      const winner = state.reveal?.winner;
+      // Everyone who scored, in order, so second and third see their place
+      // named rather than only the winner being celebrated.
+      const scorers = state.reveal?.scorers ?? [];
       const node = el('reveal-winner');
       node.classList.remove('ok', 'no');
-      if (winner === null || winner === undefined) {
+      if (scorers.length === 0) {
         node.textContent = '아무도 맞히지 못했습니다.';
-      } else if (winner.playerId === state.playerId) {
-        const points = state.answerFeedback.kind === 'accepted' ? state.answerFeedback.pointsAwarded : 0;
-        node.textContent = `내가 맞혔습니다! +${points}점`;
-        node.classList.add('ok');
       } else {
-        node.textContent = `${winner.nickname} 님이 맞혔습니다!`;
+        node.textContent = scorers
+          .map((entry) => {
+            const who = entry.playerId === state.playerId ? '나' : entry.nickname;
+            return `${entry.place}등 ${who} +${entry.pointsAwarded}점`;
+          })
+          .join(' · ');
+        if (scorers.some((entry) => entry.playerId === state.playerId)) node.classList.add('ok');
       }
 
       renderRanks(el<HTMLOListElement>('reveal-ranks'), state.leaderboard, state.playerId);

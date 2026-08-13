@@ -16,9 +16,10 @@
  *    dependency on wall-clock drift.
  *
  * Concurrency: Node runs one room's handlers on a single thread, so a handler
- * runs to completion before the next message is processed. `resolveRound` sets
- * the winner synchronously, which is why a second correct answer can never
- * also win. Do not make any handler in this file `async`.
+ * runs to completion before the next message is processed. Places are taken by
+ * appending to `round.scorers` synchronously inside one handler, which is why
+ * two players can never hold the same place however close their answers land.
+ * Do not make any handler in this file `async`.
  */
 
 import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -36,6 +37,7 @@ import type {
   RoomId,
   RoomPhase,
   RoundPublicState,
+  RoundScorer,
   ServerMessage,
   ErrorReason,
 } from './protocol.ts';
@@ -46,8 +48,19 @@ import type {
 export const ANSWER_GRACE_MS = 10_000;
 export const COUNTDOWN_MS = 3_000;
 export const REVEAL_MS = 4_000;
+/**
+ * Points by finishing place, first to last.
+ *
+ * Rewarding more than the single fastest player is what keeps a round alive
+ * for everyone else: with a winner-takes-all rule, one quick player decides
+ * every round in a few seconds and the other nineteen stop trying. The length
+ * of this array is also how many correct answers end a round early.
+ */
+export const POINTS_BY_PLACE: readonly number[] = [100, 50, 30];
 /** Points for winning a round (realtime-protocol.md §5). */
-export const POINTS_PER_WIN = 100;
+export const POINTS_PER_WIN = POINTS_BY_PLACE[0] as number;
+/** How many players may score before the round closes. */
+export const SCORERS_PER_ROUND = POINTS_BY_PLACE.length;
 export const MAX_PLAYERS = 20;
 export const MAX_NICKNAME_LENGTH = 16;
 export const MAX_GUESS_LENGTH = 100;
@@ -74,6 +87,8 @@ interface Round {
   paused: boolean;
   pausedAt: number | null;
   winnerId: PlayerId | null;
+  /** Correct answerers in the order the server received them. */
+  scorers: PlayerId[];
   resolved: boolean;
   guessCounts: Map<PlayerId, number>;
 }
@@ -217,7 +232,7 @@ export class GameRoom {
       case 'COUNTDOWN':
         return this.startRound(now);
       case 'DEADLINE':
-        return this.resolveRound(null, now);
+        return this.resolveRound(now);
       case 'REVEAL':
         return this.advanceAfterReveal(now);
       default:
@@ -403,7 +418,7 @@ export class GameRoom {
     }
     // Skip is an immediate timeout. If a correct answer already resolved the
     // round, that winner stands — processing order decides, not skip priority.
-    return this.resolveRound(null, now);
+    return this.resolveRound(now);
   }
 
   private pauseRound(now: number): Effect[] {
@@ -440,44 +455,73 @@ export class GameRoom {
       return [{ kind: 'send', to: player.id, message: { type: 'ANSWER_TOO_LATE' } }];
     }
 
+    // Already scored this round: say nothing about the guess either way. A
+    // verdict here would let a scorer keep probing to confirm the answer for
+    // the players still trying.
+    if (round.scorers.includes(player.id)) {
+      return [{ kind: 'send', to: player.id, message: { type: 'ANSWER_TOO_LATE' } }];
+    }
+
     if (!round.matcher.matches(guess)) {
       // Private to the guesser. Broadcasting misses would let players narrow
       // the answer from each other (analysis §4).
       return [{ kind: 'send', to: player.id, message: { type: 'ANSWER_REJECTED', guess } }];
     }
 
-    return this.resolveRound(player.id, now);
+    const place = round.scorers.length + 1;
+    const points = POINTS_BY_PLACE[place - 1] ?? 0;
+    round.scorers.push(player.id);
+    if (round.winnerId === null) round.winnerId = player.id;
+
+    player.score += points;
+    if (place === 1) player.roundsWon += 1;
+
+    // Only the scorer hears about it: the boards stay still until REVEAL, so a
+    // player still guessing learns nothing from watching them.
+    const accepted: Effect = {
+      kind: 'send',
+      to: player.id,
+      message: { type: 'ANSWER_ACCEPTED', pointsAwarded: points, place },
+    };
+
+    // The round stays open until the last scoring place is taken, so second
+    // and third are still worth racing for. Taking the last one closes it —
+    // and that player is still owed their own acknowledgment.
+    if (round.scorers.length < SCORERS_PER_ROUND) return [accepted];
+    return [accepted, ...this.resolveRound(now)];
   }
 
   /**
-   * Ends the round. Setting `resolved` here, synchronously, is what makes a
-   * second winner impossible.
+   * Ends the round and announces it.
+   *
+   * Scores were already applied as each answer landed, so this only reports.
+   * Setting `resolved` here, synchronously, is what stops a fourth scorer
+   * slipping in behind the third.
    */
-  private resolveRound(winnerId: PlayerId | null, now: number): Effect[] {
+  private resolveRound(now: number): Effect[] {
     const round = this.round;
     if (round === null || round.resolved) return [];
 
     round.resolved = true;
-    round.winnerId = winnerId;
     this.clearTimer();
     this.phase = 'REVEAL';
 
     const effects: Effect[] = [];
-    let winner: { playerId: PlayerId; nickname: string } | null = null;
-
-    if (winnerId !== null) {
-      const player = this.players.get(winnerId);
-      if (player !== undefined) {
-        player.score += POINTS_PER_WIN;
-        player.roundsWon += 1;
-        winner = { playerId: player.id, nickname: player.nickname };
-        effects.push({
-          kind: 'send',
-          to: player.id,
-          message: { type: 'ANSWER_ACCEPTED', pointsAwarded: POINTS_PER_WIN },
-        });
-      }
+    const scorers: RoundScorer[] = [];
+    for (const [index, playerId] of round.scorers.entries()) {
+      const player = this.players.get(playerId);
+      if (player === undefined) continue;
+      scorers.push({
+        playerId: player.id,
+        nickname: player.nickname,
+        place: index + 1,
+        pointsAwarded: POINTS_BY_PLACE[index] ?? 0,
+      });
     }
+    const winner =
+      scorers.length === 0
+        ? null
+        : { playerId: scorers[0]!.playerId, nickname: scorers[0]!.nickname };
 
     const leaderboard = this.buildLeaderboard();
     effects.push({
@@ -486,6 +530,7 @@ export class GameRoom {
         type: 'ROUND_REVEAL',
         song: { title: round.song.title, artist: round.song.artist },
         winner,
+        scorers,
         leaderboard,
       },
     });
@@ -525,6 +570,7 @@ export class GameRoom {
       paused: false,
       pausedAt: null,
       winnerId: null,
+      scorers: [],
       resolved: false,
       guessCounts: new Map(),
     };

@@ -75,10 +75,16 @@ test('answer feedback is private and a late guess carries no verdict', () => {
     guess: '틀린답',
   });
 
-  assert.deepEqual(reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 100 }]).answerFeedback, {
-    kind: 'accepted',
-    pointsAwarded: 100,
-  });
+  assert.deepEqual(
+    reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 100, place: 1 }]).answerFeedback,
+    { kind: 'accepted', pointsAwarded: 100, place: 1 },
+  );
+
+  // Second and third place score too, and the round is still running.
+  assert.deepEqual(
+    reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 50, place: 2 }]).answerFeedback,
+    { kind: 'accepted', pointsAwarded: 50, place: 2 },
+  );
 
   // Crucially there is no "you were right but slow" state to render.
   assert.deepEqual(reduce([roundStart, { type: 'ANSWER_TOO_LATE' }]).answerFeedback, { kind: 'tooLate' });
@@ -94,6 +100,7 @@ test('ROUND_REVEAL is the first message that names the song, and it syncs scores
       type: 'ROUND_REVEAL',
       song: { title: '좋은 날', artist: '아이유' },
       winner: { playerId: 'p1', nickname: 'p1' },
+      scorers: [{ playerId: 'p1', nickname: 'p1', place: 1, pointsAwarded: 100 }],
       leaderboard: [
         { playerId: 'p1', nickname: 'p1', score: 100, rank: 1 },
         { playerId: 'p2', nickname: 'p2', score: 0, rank: 2 },
@@ -114,6 +121,7 @@ test('LEADERBOARD_UPDATE sets this player standing without replacing the board',
       type: 'ROUND_REVEAL',
       song: { title: 't', artist: 'a' },
       winner: null,
+      scorers: [],
       leaderboard: [{ playerId: 'p1', nickname: 'p1', score: 100, rank: 1 }],
     },
     {
@@ -516,10 +524,19 @@ test('a host and a player play a full game through the real client', async () =>
     // form win here, and the server is the only thing that judged it.
     guest.submitAnswer('좋은 날');
     await waitUntil(guest, (state) => state.answerFeedback.kind === 'accepted', 'the win');
+    assert.equal(host.getState().reveal, null, 'second and third place are still open');
+
+    // Only two players are in the room, so nobody can take the remaining
+    // places. The host closes the round rather than waiting out the deadline.
+    host.hostSkip();
 
     const revealed = await waitUntil(host, (state) => state.reveal !== null, 'the reveal');
     assert.equal(revealed.reveal?.title, '좋은 날');
     assert.equal(revealed.reveal?.winner?.nickname, '참가자');
+    assert.deepEqual(
+      revealed.reveal?.scorers.map((entry) => [entry.place, entry.nickname]),
+      [[1, '참가자']],
+    );
 
     const final = await waitUntil(host, (state) => state.phase === 'FINISHED', 'the game to end');
     assert.equal(final.finalRanks?.length, 2);

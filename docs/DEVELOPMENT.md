@@ -52,8 +52,15 @@ npm.cmd test   # node --test *.test.ts — answerMatching, songCatalog 테스트
 
 ```powershell
 cd server
-npm.cmd test   # node --test *.test.ts — 엔진 단위 테스트 + 실제 소켓 종단 테스트
+npm.cmd test    # node --test *.test.ts — 엔진 단위 테스트 + 실제 소켓 종단 테스트
+npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json --demo-clips
 ```
+
+`npm start`는 방 하나를 만들고 참여 코드와 방장 토큰을 출력합니다. 방을 만드는
+HTTP 라우트가 아직 없기 때문이며, 이 공백은
+[`integration-plan.md`](./integration-plan.md)에 기록되어 있습니다.
+`--demo-clips`는 음원이 비어 있는 곡에 자리표시자를 채우는 개발 전용 옵션입니다
+(소리는 나지 않습니다).
 
 `server/`는 `node:http` 위에 RFC 6455 핸드셰이크와 프레이밍을 직접 구현합니다.
 WebSocket 라이브러리를 받지 않는 이유는 `shared/`와 같습니다 — 설치 단계 없이

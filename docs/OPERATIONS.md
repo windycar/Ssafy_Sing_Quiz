@@ -37,6 +37,36 @@ Invoke-WebRequest -Uri "https://drop-the-beat-quiz.jyc686397.chatgpt.site" -Meth
   `npm.cmd test`(`tests/rendered-html.test.mjs`)를 실행합니다. 자세한
   명령은 [`DEVELOPMENT.md`](./DEVELOPMENT.md) §2 참고.
 
+### 게임 서버 실행 (로컬)
+
+```powershell
+cd .worktrees\claude\server
+npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json --demo-clips --origin http://localhost:5173
+```
+
+시작하면 방 참여 코드와 방장 토큰을 출력합니다. `--demo-clips`는 음원 URL과 재생
+구간이 비어 있는 곡에 자리표시자를 채워 라운드 흐름만 확인하게 해 주는 옵션이며,
+**실제 소리는 나지 않습니다.** 이 옵션 없이 복구 데이터를 그대로 넣으면 171곡이
+전부 `MISSING_MEDIA_URL`로 제외되어 게임을 시작할 수 없습니다.
+
+`--origin`을 생략하면 Origin 검사가 꺼집니다. 로컬 개발에서만 생략하세요.
+
+### 게임 서버 배포에 관한 중요한 제약
+
+**현재 프런트엔드가 올라가 있는 Cloudflare Workers에는 이 서버를 그대로 올릴 수
+없습니다.** Workers는 포트를 열고 연결을 기다리는 프로세스를 실행하지 않습니다.
+`server/`는 `node:http`로 소켓을 직접 받는 일반 Node 프로세스입니다. 선택지는 둘
+중 하나입니다.
+
+| 방법 | 내용 | 비용 |
+| --- | --- | --- |
+| 장시간 실행 프로세스를 지원하는 호스트에 배포 | Node 22.13+ 가 돌고 WebSocket 업그레이드를 통과시키는 곳(VM, 컨테이너 등)에 그대로 올립니다. 코드 변경 없음 | 프런트와 서버가 서로 다른 곳에 배포되므로 CORS/Origin 설정과 도메인 정리가 필요합니다 |
+| Cloudflare Durable Objects로 이식 | 방 하나 = Durable Object 하나. `gameRoom.ts`는 소켓을 모르는 순수 상태 기계라 그대로 옮겨갑니다. 새로 쓰는 것은 `websocket.ts`/`index.ts` 자리의 얇은 어댑터뿐입니다 | 전송 계층 재작성, 타이머를 Durable Object 알람으로 교체 |
+
+엔진과 전송을 분리해 둔 이유가 이것입니다. 어느 쪽을 고르든 게임 규칙과 그 테스트
+54개는 손대지 않습니다. 방 하나를 한 곳이 소유해야 한다는 §1-2의 제약은 두 방법
+모두에 그대로 적용됩니다 — Durable Object는 그 제약을 플랫폼이 대신 지켜 줍니다.
+
 ## 2. 환경변수와 시크릿
 
 - 현재 프로토타입은 필수 환경변수가 없습니다(D1/R2 바인딩이 비어 있고,

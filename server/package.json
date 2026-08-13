@@ -9,6 +9,7 @@
   },
   "main": "index.ts",
   "scripts": {
+    "start": "node main.ts",
     "test": "node --test *.test.ts"
   }
 }

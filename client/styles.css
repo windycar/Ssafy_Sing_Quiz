@@ -1,0 +1,399 @@
+/* Reference client styling. Deliberately one small stylesheet with no build
+   step, matching the dependency-free constraint of the rest of the project. */
+
+:root {
+  --bg: #0e1015;
+  --panel: #171a22;
+  --panel-2: #1f2430;
+  --text: #e8eaf0;
+  --muted: #9aa3b2;
+  --accent: #ff5c8a;
+  --accent-2: #4dd6c1;
+  --danger: #ff6b6b;
+  --line: #2a3040;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* The UA rule for `[hidden]` is `display: none` at the lowest specificity, so
+   any class here that sets `display` silently defeats it — which is how host
+   controls (`.row`) and the answer form (`.stack`) leaked onto a player's
+   screen. The whole UI is toggled through the `hidden` property, so this rule
+   has to outrank every layout class in the file. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  padding: 0 1rem 4rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  line-height: 1.6;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: 0.02em;
+}
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+}
+
+.screen {
+  padding: 1.5rem 0;
+}
+
+h2 {
+  font-size: 1.35rem;
+  margin: 0 0 0.75rem;
+}
+
+h3 {
+  font-size: 1rem;
+  color: var(--muted);
+  margin: 1.5rem 0 0.5rem;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 2rem 0;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.warning {
+  background: #2a1f24;
+  border: 1px solid #4a2b38;
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+}
+
+.status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.code {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 1.1rem;
+  background: var(--panel-2);
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  letter-spacing: 0.08em;
+}
+
+/* --- Forms ---------------------------------------------------------------- */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 24rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.75rem 0;
+}
+
+label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+input {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  min-width: 0;
+}
+
+input:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+button {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.55rem 1.1rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent-2);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #17070d;
+  font-weight: 700;
+}
+
+/* --- Song registration ---------------------------------------------------- */
+
+details {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.song-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.song {
+  border-top: 1px solid var(--line);
+  padding: 0.6rem 0;
+}
+
+.song-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.song-state {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.song-state.ok {
+  color: var(--accent-2);
+}
+
+.song-media {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+/* --- Lobby ---------------------------------------------------------------- */
+
+.roster {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem;
+}
+
+.roster li {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.roster li.offline {
+  opacity: 0.5;
+}
+
+.tag {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.tag.ready {
+  color: var(--accent-2);
+}
+
+/* --- Round ---------------------------------------------------------------- */
+
+.countdown {
+  font-size: 3rem;
+  font-weight: 800;
+  text-align: center;
+  margin: 2rem 0;
+  color: var(--accent);
+}
+
+.timer {
+  height: 10px;
+  background: var(--panel-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.timer-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  /* No CSS transition on width: the bar is redrawn from the server's deadline
+     on every tick, and an animation would let it drift from that value. */
+}
+
+.timer-text {
+  margin: 0.35rem 0 1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.timer.paused .timer-fill {
+  background: var(--muted);
+}
+
+.feedback {
+  min-height: 1.6rem;
+  font-weight: 600;
+}
+
+.feedback.ok {
+  color: var(--accent-2);
+}
+
+.feedback.no {
+  color: var(--danger);
+}
+
+.reveal-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin: 0.5rem 0 0;
+}
+
+/* --- Ranks ---------------------------------------------------------------- */
+
+.ranks {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ranks li {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr auto;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.ranks li.you {
+  background: var(--panel);
+  border-radius: var(--radius);
+}
+
+.ranks .rank {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ranks .score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.podium {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 2rem;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.podium li {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 0.5rem;
+  text-align: center;
+}
+
+.podium li:nth-child(1) {
+  border-color: var(--accent);
+  padding-block: 2rem;
+}
+
+.podium .medal {
+  display: block;
+  font-size: 1.5rem;
+}
+
+/* --- Toast ---------------------------------------------------------------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  margin: 0;
+  max-width: min(34rem, 90vw);
+}
+
+@media (max-width: 34rem) {
+  .song-media {
+    grid-template-columns: 1fr;
+  }
+
+  .podium {
+    grid-template-columns: 1fr;
+  }
+}

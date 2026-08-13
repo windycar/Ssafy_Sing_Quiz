@@ -1,0 +1,262 @@
+# 개발 가이드
+
+이 저장소에서 개발 환경을 준비하고, 프로토타입을 실행·검증하고, 두 에이전트
+브랜치(`agent/claude`, `agent/codex`)를 오가며 작업을 주고받는 방법을
+정리합니다. 대상 독자는 이 프로젝트를 로컬에서 실행하거나, Claude/Codex의
+작업을 이어받아 통합하는 사람입니다.
+
+## 1. Windows 필수 도구
+
+| 도구 | 요구 버전 | 확인 명령 |
+| --- | --- | --- |
+| Node.js | `>=22.13.0` (`music-quiz`, `shared` 공통 요구사항) | `node --version` |
+| npm | Node.js에 포함 | `npm --version` |
+| Python | 3.x (`tools/extract-scx-song-text.py` 실행용) | `python --version` |
+| Git | 최신 안정 버전 | `git --version` |
+
+버전이 요구치보다 낮으면 `npm.cmd install` 단계에서 `engines` 경고 또는
+설치 실패가 발생할 수 있습니다. Node.js는 공식 Windows 인스톨러 또는
+`nvm-windows`로 설치하세요.
+
+## 2. 프로토타입 실행 명령
+
+프로토타입 앱(`music-quiz/`)은 `agent/codex` 브랜치의
+`.worktrees/codex/music-quiz`에 있습니다. 아래 명령은 실제
+`music-quiz/package.json`에 정의된 스크립트만 사용합니다 — 이 목록에 없는
+명령은 존재하지 않습니다.
+
+```powershell
+npm.cmd install          # 의존성 설치
+npm.cmd run dev          # 로컬 개발 서버 (vinext dev, Cloudflare Workers 런타임 에뮬레이션)
+npm.cmd test             # 빌드 후 tests/rendered-html.test.mjs 실행
+npm.cmd run lint         # eslint . (dist, .next 제외)
+npm.cmd run build        # 프로덕션 빌드 (vinext build)
+npm.cmd run start        # 빌드 산출물 로컬 구동 (vinext start)
+npm.cmd run db:generate  # drizzle-kit generate — db/schema.ts 기반 마이그레이션 생성
+```
+
+`db:generate`는 `db/schema.ts`가 비어 있는 현재 상태에서는 생성할 테이블이
+없습니다. D1/R2 바인딩도 아직 연결되어 있지 않습니다
+(`music-quiz/.openai/hosting.json` 기준 `d1: null`, `r2: null`) — 지금
+프로토타입은 데이터베이스를 실제로 쓰지 않습니다.
+
+공용 로직(`shared/`)은 이 브랜치(`agent/claude`)에 있고 별도 테스트 스크립트를
+가집니다.
+
+```powershell
+cd shared
+npm.cmd test   # node --test *.test.ts — answerMatching, songCatalog 테스트
+```
+
+권위 게임 서버(`server/`)와 웹 클라이언트(`client/`)도 같은 방식으로 의존성
+없이 돌아갑니다. 서버 하나가 API·WebSocket·클라이언트를 모두 제공합니다.
+
+```powershell
+cd server
+npm.cmd test    # node --test *.test.ts — 엔진 단위 테스트 + 실제 소켓 종단 테스트 + HTTP API 테스트
+npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json
+```
+
+출력된 주소(<http://localhost:8787>)를 브라우저로 열면 방 만들기부터 진행할 수
+있습니다. 주요 옵션은 다음과 같습니다.
+
+| 옵션 | 뜻 |
+| --- | --- |
+| `--songs <경로>` | 곡 JSON. 배열이거나 `{"songs": [...]}` 형식 |
+| `--port <번호>` | 기본 8787 |
+| `--origin <주소>` | 허용할 출처. **여러 번 지정 가능.** 생략하면 Origin 검사와 CORS 검사가 모두 꺼집니다 — 로컬 전용 |
+| `--demo-clips` | 음원이 비어 있는 곡에 자리표시자를 채우는 개발 전용 옵션 (소리는 나지 않습니다) |
+| `--headless` | 클라이언트를 서빙하지 않고 API/WebSocket만 제공 |
+
+클라이언트 테스트는 순수 리듀서 테스트, 가짜 소켓을 쓴 재접속 테스트, 그리고
+실제 서버를 띄워 실제 WebSocket으로 한 판을 끝까지 진행하는 종단 테스트로
+나뉩니다.
+
+```powershell
+cd client
+npm.cmd test   # node --test *.test.ts
+```
+
+`server/`는 `node:http` 위에 RFC 6455 핸드셰이크와 프레이밍을 직접 구현합니다.
+WebSocket 라이브러리를 받지 않는 이유는 `shared/`와 같습니다 — 설치 단계 없이
+`node --test`만으로 검증할 수 있게 하기 위해서입니다. 서버를 코드에서 띄울 때는
+다음과 같이 씁니다.
+
+```ts
+const running = startServer({
+  port: 8080,
+  songs,
+  allowedOrigins: ['https://…'],
+  clientDir: '…/client',   // 생략하면 API/WebSocket만 제공
+  sharedDir: '…/shared',
+});
+const { room } = running.game.createRoom({ songCount: 10 });
+await running.stop();      // 타이머 정리 + 소켓 드레이닝
+```
+
+### 빌드 단계가 없는 이유
+
+`client/`는 TypeScript로 작성되어 있지만 번들러가 없습니다. 서버가 `.ts`
+파일을 요청받으면 Node에 내장된 `stripTypeScriptTypes`로 타입만 지워
+JavaScript로 내려보냅니다(`server/staticFiles.ts`). 덕분에
+
+- 저장소 tsconfig가 클라이언트 코드까지 그대로 타입 검사하고,
+- `node --test`가 클라이언트 모듈을 그대로 불러 테스트하며,
+- 브라우저는 **서버와 같은 소스 파일**을 받습니다.
+
+타입 제거는 문법을 공백으로 치환할 뿐이라 브라우저 스택 트레이스의 줄·열
+번호가 원본과 일치합니다. 이 방식은 개발용입니다 — 공개 배포에서 무엇을 대신
+써야 하는지는 [`OPERATIONS.md`](./OPERATIONS.md)에 있습니다.
+
+### 타입 검사
+
+워크트리 루트의 `tsconfig.json` 하나로 `shared/`, `server/`, `client/`를 함께
+확인합니다.
+
+```powershell
+npx tsc --noEmit -p .
+```
+
+의존성이 없으므로 실행과 테스트에는 `npm.cmd install`이 필요하지 않습니다
+(`tsc` 실행에만 TypeScript와 `@types/node`가 필요합니다). 현재 테스트는
+**122개**(`shared` 30개, `server` 74개, `client` 18개)이며 모두 통과해야 합니다.
+Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 미만에서는 문법
+오류로 실패합니다.**
+
+> **알려진 빌드 문제.** `music-quiz/vite.config.ts`는 `./build/sites-vite-plugin`을
+> 가져오는데, 저장소 루트 `.gitignore`의 `build/` 규칙 때문에 이 디렉터리가
+> 커밋되어 있지 않습니다. 현재 `.worktrees/codex`에는 파일이 로컬에 남아 있어
+> 동작하지만, 저장소를 새로 복제한 환경에서는 `npm.cmd run dev`와
+> `npm.cmd run build`가 모듈을 찾지 못하고 실패합니다. 통합 전에 `.gitignore`
+> 예외를 추가하거나 플러그인 의존을 제거해야 합니다.
+
+타입 검사 설정은 워크트리 루트 `tsconfig.json` 하나로 통일되어 있습니다
+(`strict`, `noUnusedLocals`, `noImplicitOverride` 등). 산출물을 만들지 않고
+검사만 수행합니다.
+
+## 3. 디렉터리 구조
+
+### 저장소 루트 (이 브랜치)
+
+| 경로 | 역할 |
+| --- | --- |
+| `AGENTS.md` | Claude/Codex 공통 작업 정책 (역할 분담, 워크스페이스 소유권, 핸드오프 규칙) — 이 저장소의 최상위 규칙 |
+| `CLAUDE.md` | Claude Code 전용 지시사항 |
+| `README.md` | 프로젝트 개요, 배포 링크, 구현 현황 |
+| `docs/claude-analysis.md` | 실시간 아키텍처 분석 (전송 방식, 동시성, 재접속, 보안) |
+| `docs/realtime-protocol.md` | WebSocket 메시지 규격과 상태 전이표 |
+| `docs/integration-plan.md` | 두 브랜치를 병합하는 순서와 충돌 목록 |
+| `docs/USER_GUIDE.md` / `docs/SONG_DATA_GUIDE.md` / `docs/DEVELOPMENT.md` / `docs/OPERATIONS.md` | 사용자·데이터·개발·운영 가이드 (이 문서) |
+| `shared/answerMatching.ts` | 정답 정규화(NFKC, 소문자화, 문자/숫자만 남기기) 및 별칭 매칭 |
+| `shared/songCatalog.ts` | 원본 곡 레코드를 `SongConfig`로 검증·변환, 괄호 별칭 자동 확장, 방장 음원 등록 병합 |
+| `server/gameRoom.ts` | 방 상태 기계. 소켓·시계·타이머를 모르는 순수 로직 |
+| `server/protocol.ts` | 와이어 프로토콜 타입과 수신 메시지 검증 |
+| `server/websocket.ts` | `node:http` 위에 직접 구현한 RFC 6455 전송 계층 |
+| `server/http.ts` | 방 생성·조회·곡 카탈로그 API, 요청 빈도 제한, CORS |
+| `server/staticFiles.ts` | 클라이언트 정적 서빙. `.ts`를 타입 제거해 JS로 내려보냄 |
+| `server/index.ts` | 방 레지스트리와 전송 계층 연결, 타이머 소유, 방치된 방 회수 |
+| `server/main.ts` | 명령줄 실행 진입점 |
+| `client/protocolClient.ts` | 프레임워크 비의존 프로토콜 클라이언트 (재접속, 서버 시계 보정, 메시지→상태 변환) |
+| `client/api.ts` | HTTP API 타입 래퍼 |
+| `client/ui.ts`, `client/index.html`, `client/styles.css` | 참조 웹 클라이언트 (방장·참가자 전 화면) |
+| `*/**.test.ts` | 각 모듈의 테스트 |
+
+### `music-quiz/` (`agent/codex` 브랜치)
+
+| 경로 | 역할 |
+| --- | --- |
+| `app/page.tsx` | 대기실/게임/결과 화면 전체를 담은 단일 클라이언트 컴포넌트. 로컬 상태로 타이머·정답 판정·순위를 계산하는 프로토타입 |
+| `app/layout.tsx`, `app/globals.css` | 공통 레이아웃과 스타일 |
+| `worker/index.ts` | Cloudflare Workers 진입점. 현재는 vinext 템플릿 그대로이며, 게임 전용 서버 로직은 없음 |
+| `db/schema.ts`, `db/index.ts`, `drizzle.config.ts` | Drizzle ORM 스캐폴드. 스키마는 비어 있고 D1 바인딩도 연결 전 |
+| `tests/rendered-html.test.mjs` | 빌드 산출물 HTML을 검사하는 테스트 |
+| `vite.config.ts`, `next.config.ts` | 빌드 설정 (vinext/Vite 기반) |
+| `data/songs.recovered.json`, `tools/extract-scx-song-text.py`, `docs/scx-recovery.md` | SCX에서 복구한 곡 텍스트와 복구 스크립트 — 저장소 루트 기준 경로, 자세한 내용은 [`SONG_DATA_GUIDE.md`](./SONG_DATA_GUIDE.md) |
+
+## 4. 에이전트 역할 분담과 워크트리
+
+`AGENTS.md`에 정의된 기본 정책입니다.
+
+| 역할 | 담당 | 비중 |
+| --- | --- | --- |
+| 요구사항 분석, 아키텍처, 백엔드/핵심 기능 구현, 테스트, 1차 리뷰 | Claude Code | 약 70–80% |
+| 오케스트레이션, 비공개/로컬 파일 검토, 통합 리뷰, 독립 검증, 배포, 최종 보고 | Codex | 약 20–30% |
+
+| 에이전트 | 워크트리 | 브랜치 |
+| --- | --- | --- |
+| Claude Code | `.worktrees/claude` | `agent/claude` |
+| Codex | `.worktrees/codex` | `agent/codex` |
+| 통합 | 저장소 루트 | `main` |
+
+각 에이전트는 자신의 워크트리/브랜치만 수정합니다. 다른 에이전트의 워크트리
+파일을 직접 편집하지 않습니다(참고용으로만 읽습니다).
+
+## 5. 브랜치, 커밋, 인수인계, 통합 절차
+
+1. 작업 시작 전 `git status --short --branch`로 현재 브랜치가 자신의 담당
+   브랜치인지 확인합니다.
+2. 커밋 메시지는 `type(scope): summary` 형식을 씁니다.
+3. 작업을 마치면 다음을 보고합니다: 브랜치와 커밋 해시, 변경된 파일, 실행한
+   검증과 결과, 남은 위험 요소나 후속 작업.
+4. `main`으로의 병합은 사용자가 명시적으로 요청했을 때만 수행합니다. 병합
+   순서는 [`integration-plan.md`](./integration-plan.md) §3을 따릅니다
+   (먼저 `agent/claude`, 그다음 `agent/codex`, 이후 `shared`를 `music-quiz`에
+   연결).
+
+```powershell
+git switch main
+git merge --no-ff agent/claude
+git merge --no-ff agent/codex
+```
+
+두 브랜치가 같은 줄을 바꿨다면 하나를 먼저 병합하고 두 번째 병합에서
+충돌을 해결합니다.
+
+각 에이전트 브랜치를 `main`의 최신 상태로 맞추려면 해당 워크트리가 깨끗한
+상태일 때 다음을 실행합니다.
+
+```powershell
+git merge main
+```
+
+## 6. 민감정보 금지, 환경변수 원칙
+
+- `.env`, 자격 증명, API 키, 토큰, 개인정보를 커밋하지 않습니다.
+- 설정이 필요하면 로컬 `.env`를 쓰고, 저장소에는 값이 비어 있거나 예시로
+  채워진 `.env.example`만 커밋합니다.
+- 프롬프트, 커밋 메시지, 문서에도 비밀값을 적지 않습니다.
+- 배포 관련 자격 증명·플랫폼 설정은 Codex가 로컬에서 다루고, Claude에게는
+  필요한 경우 정제된 요약만 전달합니다(`AGENTS.md` 기준).
+
+## 7. 남은 통합 작업
+
+이 브랜치에는 서버와 클라이언트가 모두 있고, 둘은 이미 연결되어 동작합니다.
+남은 것은 `agent/codex`의 Next.js 프로토타입(`music-quiz/`)을 어떻게 할지
+결정하는 일입니다. 전체 순서와 근거는
+[`integration-plan.md`](./integration-plan.md) §3에 있습니다.
+
+| 단계 | 상태 |
+| --- | --- |
+| 1. `agent/claude`를 `main`에 병합 | 대기 (사용자 승인 필요) |
+| 2. `agent/codex`를 `main`에 병합 (`.gitignore`는 codex 버전 채택) | 대기 |
+| 3. `shared/`를 `music-quiz`에 연결하고 `page.tsx`의 자체 정규화 함수 제거 | 대기 |
+| 4. 권위 서버 구현 | **완료** (`server/`) |
+| 5. 클라이언트를 프로토콜 클라이언트로 전환 | **완료** (`client/`) — `music-quiz`에 적용하는 것은 대기 |
+| 6. 방장 음원 등록 화면 | **완료** (`client/ui.ts`, `POST /api/rooms`의 `media`) |
+
+`music-quiz`를 살리기로 한다면 다시 만들 것은 화면뿐입니다.
+`client/protocolClient.ts`는 DOM도 프레임워크도 쓰지 않으므로 React 컴포넌트에서
+그대로 `import`할 수 있습니다. 이 서버를 다른 포트에서 띄운 UI와 함께 쓰려면
+`--origin`으로 그 출처를 허용하세요.
+
+각 단계의 diff와 테스트 결과는 통합 전에 Codex가 검토합니다
+(`AGENTS.md` 기본 정책).
+
+## 관련 문서
+
+- [`../AGENTS.md`](../AGENTS.md) — 에이전트 공통 작업 정책 (이 문서의 §4, §5, §6의 원문)
+- [`claude-analysis.md`](./claude-analysis.md) — 서버 아키텍처 근거
+- [`realtime-protocol.md`](./realtime-protocol.md) — 메시지/상태 전이 규격
+- [`integration-plan.md`](./integration-plan.md) — 병합 순서와 충돌 상세
+- [`SONG_DATA_GUIDE.md`](./SONG_DATA_GUIDE.md) — 곡 데이터 스키마와 추출기 사용법
+- [`OPERATIONS.md`](./OPERATIONS.md) — 배포·운영·보안 원칙

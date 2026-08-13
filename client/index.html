@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Drop the Beat — 노래 맞히기</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/ui.ts"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Drop the Beat</h1>
+      <p id="connection" class="status"></p>
+    </header>
+
+    <main>
+      <!-- 1. 시작 화면 ------------------------------------------------------->
+      <section id="screen-home" class="screen">
+        <h2>방 참여</h2>
+        <form id="join-form" class="stack">
+          <label for="join-code">참여 코드</label>
+          <input id="join-code" name="code" autocomplete="off" required />
+          <label for="join-nickname">닉네임</label>
+          <input id="join-nickname" name="nickname" maxlength="16" autocomplete="off" required />
+          <button type="submit" class="primary">참여하기</button>
+        </form>
+
+        <hr />
+
+        <h2>방 만들기</h2>
+        <p class="muted">방장은 곡을 고르고 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.</p>
+        <button id="go-setup" type="button">방 만들기</button>
+      </section>
+
+      <!-- 2. 방장 설정 화면 -------------------------------------------------->
+      <section id="screen-setup" class="screen" hidden>
+        <h2>방 설정</h2>
+        <p>참여 코드: <code id="invite-code" class="code"></code></p>
+
+        <label for="invite-link">참가자에게 보낼 링크</label>
+        <div class="row">
+          <input id="invite-link" readonly />
+          <button id="copy-invite" type="button">복사</button>
+        </div>
+
+        <p class="warning">
+          방장 링크에는 방장 권한 토큰이 들어 있습니다. <strong>절대 참가자에게 공유하지 마세요.</strong>
+          새로고침해도 이 탭에서는 방장 권한이 유지되며, 다른 기기에서 진행할 때만 필요합니다.
+        </p>
+        <button id="copy-host" type="button">방장 링크 복사</button>
+
+        <hr />
+
+        <h3>출제할 곡</h3>
+        <p id="catalog-summary" class="muted">곡 목록을 불러오는 중…</p>
+
+        <label for="song-count">출제 곡 수</label>
+        <input id="song-count" type="number" min="1" max="50" value="5" />
+
+        <details id="media-panel">
+          <summary>음원 등록 (재생 가능한 곡이 없다면 필수)</summary>
+          <p class="muted">
+            곡별로 음원 URL과 재생 구간을 입력합니다. 구간 길이는 5~15초여야 합니다. 저작권이 확보된
+            음원만 사용하세요. 여기에 입력한 값은 이 방에만 적용되며 서버에 저장되지 않습니다.
+          </p>
+          <input id="song-filter" type="search" placeholder="곡 제목 또는 가수 검색" autocomplete="off" />
+          <ul id="song-list" class="song-list"></ul>
+          <p id="song-list-more" class="muted" hidden></p>
+        </details>
+
+        <p id="setup-error" class="error" hidden></p>
+        <div class="row">
+          <button id="save-setlist" type="button">곡 설정 저장</button>
+        </div>
+        <p id="setlist-summary" class="muted"></p>
+
+        <hr />
+        <form id="host-enter-form" class="stack">
+          <label for="host-nickname">방장 닉네임</label>
+          <input id="host-nickname" maxlength="16" value="방장" autocomplete="off" required />
+          <button type="submit" class="primary">방에 입장</button>
+        </form>
+      </section>
+
+      <!-- 4. 대기실 ----------------------------------------------------------->
+      <section id="screen-lobby" class="screen" hidden>
+        <h2>대기실</h2>
+        <p>참여 코드: <code id="lobby-code" class="code"></code></p>
+        <ul id="roster" class="roster"></ul>
+        <div class="row">
+          <button id="ready-toggle" type="button">준비</button>
+          <button id="start-game" type="button" class="primary" hidden>게임 시작</button>
+        </div>
+        <p id="lobby-hint" class="muted"></p>
+      </section>
+
+      <!-- 5. 라운드 ----------------------------------------------------------->
+      <section id="screen-round" class="screen" hidden>
+        <p id="round-progress" class="muted"></p>
+        <p id="countdown" class="countdown" hidden></p>
+
+        <div id="timer" class="timer">
+          <div id="timer-fill" class="timer-fill"></div>
+        </div>
+        <p id="timer-text" class="timer-text"></p>
+
+        <p id="audio-state" class="muted"></p>
+        <button id="audio-retry" type="button" hidden>음원 재생</button>
+
+        <form id="answer-form" class="stack">
+          <label for="answer-input">정답</label>
+          <input id="answer-input" maxlength="100" autocomplete="off" placeholder="곡 제목을 입력하세요" />
+          <button type="submit" class="primary">제출</button>
+        </form>
+        <p id="answer-hint" class="muted"></p>
+        <p id="answer-feedback" class="feedback"></p>
+
+        <div id="host-controls" class="row" hidden>
+          <button id="host-pause" type="button">일시정지</button>
+          <button id="host-resume" type="button" hidden>재개</button>
+          <button id="host-skip" type="button">스킵</button>
+        </div>
+
+        <h3>순위</h3>
+        <ol id="round-ranks" class="ranks"></ol>
+      </section>
+
+      <!-- 6. 정답 공개 -------------------------------------------------------->
+      <section id="screen-reveal" class="screen" hidden>
+        <h2>정답</h2>
+        <p id="reveal-title" class="reveal-title"></p>
+        <p id="reveal-artist" class="muted"></p>
+        <p id="reveal-winner" class="feedback"></p>
+        <h3>순위</h3>
+        <ol id="reveal-ranks" class="ranks"></ol>
+      </section>
+
+      <!-- 7. 최종 결과 -------------------------------------------------------->
+      <section id="screen-final" class="screen" hidden>
+        <h2>최종 결과</h2>
+        <ol id="podium" class="podium"></ol>
+        <ol id="final-ranks" class="ranks"></ol>
+        <button id="play-again" type="button">처음으로</button>
+      </section>
+    </main>
+
+    <p id="toast" class="toast" role="status" hidden></p>
+
+    <!-- 클립 재생용. src 는 라운드 시작 시 서버가 준 주소로 설정됩니다. -->
+    <audio id="clip" preload="auto"></audio>
+
+    <template id="song-row">
+      <li class="song">
+        <div class="song-meta">
+          <strong class="song-title"></strong>
+          <span class="song-artist muted"></span>
+          <span class="song-state"></span>
+        </div>
+        <div class="song-media">
+          <input class="media-url" type="url" placeholder="음원 URL (http/https)" autocomplete="off" />
+          <input class="clip-start" type="number" min="0" step="0.5" placeholder="시작(초)" />
+          <input class="clip-end" type="number" min="0" step="0.5" placeholder="끝(초)" />
+        </div>
+      </li>
+    </template>
+  </body>
+</html>

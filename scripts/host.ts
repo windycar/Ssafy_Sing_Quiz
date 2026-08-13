@@ -18,7 +18,7 @@
  * - 주소를 아는 사람은 누구나 들어올 수 있습니다. 참여 코드가 방을 지킵니다.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -88,6 +88,25 @@ function startTunnel(port: number): { child: ChildProcess; url: Promise<string> 
   return { child, url };
 }
 
+/**
+ * Kills a child and everything it started.
+ *
+ * `child.kill()` on Windows terminates only the process named, so a tunnel or
+ * a server that spawned anything of its own leaks. A leaked tunnel keeps a
+ * public address alive for a game that has stopped, and a leaked server holds
+ * the port the next run needs — both surface as a confusing failure at the
+ * worst possible moment, when someone is trying to start an event.
+ */
+function killTree(child: ChildProcess): void {
+  const pid = child.pid;
+  if (pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    return;
+  }
+  child.kill();
+}
+
 function parsePort(argv: readonly string[]): number {
   const index = argv.indexOf('--port');
   if (index === -1) return 8787;
@@ -141,8 +160,8 @@ async function main(): Promise<void> {
   const stop = (): void => {
     if (stopping) return;
     stopping = true;
-    server.kill();
-    tunnel.child.kill();
+    killTree(server);
+    killTree(tunnel.child);
   };
 
   // 한쪽이 죽으면 다른 쪽도 정리합니다. 서버 없는 주소나 주소 없는 서버는
@@ -155,8 +174,19 @@ async function main(): Promise<void> {
     if (!stopping) console.error('\n터널이 끊어졌습니다. 서버를 정리합니다.');
     stop();
   });
+
+  // 창의 X 버튼으로 닫는 경우까지 포함해 나갈 수 있는 모든 문에 같은 정리를
+  // 겁니다. `exit` 는 동기 작업만 허용하므로 killTree 도 동기입니다.
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+  process.on('SIGHUP', stop);
+  process.on('SIGBREAK', stop);
+  process.on('exit', stop);
+  process.on('uncaughtException', (error) => {
+    stop();
+    console.error(error);
+    process.exitCode = 1;
+  });
 }
 
 void main();

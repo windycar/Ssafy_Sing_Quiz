@@ -8,8 +8,21 @@
 
 ## 1. 현재 배포 개념
 
-배포 대상은 `music-quiz/`(`agent/codex` 브랜치) 하나뿐이며, 정적 UI
-프로토타입입니다. 서버 코드나 게임 상태를 담당하는 백엔드는 없습니다.
+배포 대상은 `music-quiz/` 하나지만, **이제 그것만 배포해서는 게임이 돌아가지
+않습니다.** `music-quiz/`는 권위 게임 서버에 붙는 클라이언트로 바뀌었고,
+판정·타이머·순위는 전부 그 서버가 합니다.
+
+Cloudflare Workers는 소켓을 열어 두고 대기하는 프로세스를 실행할 수 없으므로
+게임 서버는 **항상 Workers 바깥의 별도 호스트**에 있어야 합니다. 두 가지를
+반드시 함께 설정합니다.
+
+| 설정 | 어디에 | 값 |
+| --- | --- | --- |
+| `VITE_GAME_SERVER` | `music-quiz` 빌드 환경 | 게임 서버의 공개 주소 (예: `https://game.example.com`). 빌드 시점에 번들에 박히므로 배포마다 지정해야 합니다 |
+| `--origin` | 게임 서버 실행 인자 | 배포된 UI의 출처 (예: `https://drop-the-beat-quiz…`). 지정하지 않으면 Origin/CORS 검사가 꺼집니다 |
+
+두 값은 서로를 가리켜야 합니다. 한쪽만 설정하면 브라우저가 CORS에서 막히거나
+(UI만 설정), 아무 사이트나 이 게임 서버를 호출할 수 있게 됩니다(서버만 설정).
 
 - 빌드 산출물은 Cloudflare Workers 런타임을 대상으로 하는 `vinext build`로
   생성됩니다(`worker/index.ts`, `wrangler` 의존성 기준).
@@ -19,6 +32,9 @@
 - 배포 URL: <https://drop-the-beat-quiz.jyc686397.chatgpt.site> (비공개,
   접근 권한이 있는 계정 필요). 배포 자격 증명과 플랫폼 설정은 Codex가
   로컬에서 다루며 이 문서에는 포함하지 않습니다.
+- **현재 배포본은 게임 서버가 붙기 전의 프로토타입입니다.** 위 표의 두 설정을
+  갖춰 다시 배포하기 전까지, 이 URL은 여러 명이 함께 플레이할 수 있는 물건이
+  아닙니다.
 
 ### 배포 상태 검증 명령
 
@@ -171,7 +187,7 @@ npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json --origin http://l
 | 브라우저 콘솔에 CSP 위반이 찍힌다 | 클라이언트에 인라인 스크립트/스타일이 추가됨 | `staticFiles.ts`의 정책은 same-origin 전용입니다. 인라인 대신 파일로 분리하세요 |
 | 라운드가 시작되지 않는다 | 방장 토큰 검증 실패 또는 참가자 0명으로 `NOT_ENOUGH_PLAYERS` 거부 | 서버 `ERROR` 응답의 `reason`을 확인 (`realtime-protocol.md` §4) |
 | 소스를 고쳤는데 브라우저가 옛 코드를 실행한다 | 정적 응답이 캐시됨 | 현재는 `no-store`라 발생하지 않아야 합니다. 프록시가 캐시 헤더를 덮어쓰는지 확인하세요 |
-| 같은 정답인데 서버는 오답, 클라이언트는 정답으로 판정한다 | 서버와 클라이언트가 서로 다른 정규화 로직을 사용 중 | 참조 클라이언트는 `shared/answerMatching.ts`를 그대로 import 하므로 발생하지 않습니다. `music-quiz`를 연결할 때 재발할 수 있습니다 (`integration-plan.md` §1.1) |
+| 같은 정답인데 서버는 오답, 클라이언트는 정답으로 판정한다 | 서버와 클라이언트가 서로 다른 정규화 로직을 사용 중 | 참조 클라이언트도 `music-quiz`도 `shared/answerMatching.ts`를 그대로 import 하므로 발생하지 않습니다. 자체 정규화 함수를 다시 만들면 재발합니다 (`integration-plan.md` §1.1) |
 
 ## 8. 출시 전 미완료 항목
 

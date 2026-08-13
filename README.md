@@ -18,8 +18,8 @@
 | 정답 정규화 · 별칭 매칭 · 곡 카탈로그 검증 | [`shared/`](shared) | 구현·테스트 완료. 서버와 클라이언트가 같은 모듈을 씁니다 |
 | 프로토콜 클라이언트 (재접속, 서버 시계 보정) | [`client/protocolClient.ts`](client/protocolClient.ts) | 구현·테스트 완료. 프레임워크 비의존 |
 | 웹 클라이언트 (방장/참가자 전 화면) | [`client/`](client) | 구현 완료. 브라우저에서 종단 확인 |
-| 두 브랜치를 합치는 순서와 충돌 목록 | [`docs/integration-plan.md`](docs/integration-plan.md) | 문서 완료, 실행은 대기 중 |
-| UI 프로토타입 (`music-quiz/`) | `agent/codex` 브랜치 | 단일 브라우저 데모, 서버 없음 |
+| 두 브랜치를 합치는 순서와 충돌 목록 | [`docs/integration-plan.md`](docs/integration-plan.md) | 문서 완료, 병합은 사용자 승인 대기 |
+| React 클라이언트 (`music-quiz/`) | [`music-quiz/app/page.tsx`](music-quiz/app/page.tsx) | 프로토타입에서 프로토콜 클라이언트로 포팅 완료. 브라우저 조작 확인은 미완 |
 
 남은 가장 큰 공백은 코드가 아니라 **음원**입니다. 아래 [실행](#실행)을 참고하세요.
 
@@ -43,6 +43,23 @@ node main.ts --songs ../../codex/data/songs.recovered.json
   구간(5~15초)을 입력합니다. 라이선스가 확보된 음원만 사용하세요.
 - **서버·화면 흐름만 확인하려면**: `--demo-clips`를 붙입니다. 자리표시자 URL을
   채워 라운드 루프가 돌아가지만 **소리는 나지 않습니다.**
+
+### React UI(`music-quiz/`)로 플레이하기
+
+위 명령이 띄우는 것은 참조 클라이언트(`client/`)입니다. 같은 서버에 Next.js
+화면을 붙이려면 프로세스를 하나 더 띄웁니다.
+
+```bash
+# 터미널 1 — 게임 서버
+node server/main.ts --songs data/songs.recovered.json --origin http://localhost:3000
+
+# 터미널 2 — React UI
+cd music-quiz
+VITE_GAME_SERVER=http://localhost:8787 npm run dev
+```
+
+두 화면은 같은 방·같은 판정을 공유합니다. 설정값의 의미는
+[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) §2에 있습니다.
 
 자세한 조작법은 [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md), 나머지 명령과
 디렉터리 구조는 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)에 있습니다.
@@ -77,7 +94,8 @@ node main.ts --songs ../../codex/data/songs.recovered.json
 | **구현됨 (HTTP API)** | 방 생성(`POST /api/rooms`, 참여 코드와 방장 토큰 발급), 방 조회, 곡 카탈로그 조회, 방장 음원 등록, 헬스 체크 |
 | **구현됨 (클라이언트)** | 방 만들기·참여·닉네임, 대기실과 준비 상태, 서버 기준 카운트다운·타이머, 클립 재생, 정답 입력과 본인 전용 판정 결과, 방장 일시정지/재개/스킵, 정답 공개, 실시간 순위와 최종 시상대, 새로고침 후 이어하기 |
 | **구현됨 (공용)** | 정답 정규화/별칭 매칭, 곡 카탈로그 검증·별칭 자동 확장 — 서버와 클라이언트가 같은 파일을 가져다 씁니다 |
-| **미구현** | 라이선스가 확보된 실제 음원(방장이 직접 등록해야 합니다), 방 상태 영속화(프로세스 재시작 시 소멸), `agent/codex`의 Next.js UI를 이 서버에 연결하는 작업 |
+| **구현됨 (React UI)** | `music-quiz/`의 Next.js 화면 전체가 같은 서버·같은 프로토콜을 씁니다. 자체 정답 판정·자체 타이머·정답 노출·오답 브로드캐스트를 모두 제거했습니다 |
+| **미구현** | 라이선스가 확보된 실제 음원(방장이 직접 등록해야 합니다), 방 상태 영속화(프로세스 재시작 시 소멸), `music-quiz` 화면의 브라우저 조작 검증 |
 
 기능별 상세는 [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) §5,
 두 브랜치를 합치는 순서는 [`docs/integration-plan.md`](docs/integration-plan.md) §3에

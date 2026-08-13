@@ -13,8 +13,12 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "allowImportingTsExtensions": true,
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@song-quiz/shared/*": ["../shared/*"],
+      "@song-quiz/client/*": ["../client/*"],
+      "@song-quiz/server/*": ["../server/*"]
     }
   },
   "include": [
@@ -23,7 +27,10 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "../shared/**/*.ts",
+    "../client/**/*.ts",
+    "../server/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

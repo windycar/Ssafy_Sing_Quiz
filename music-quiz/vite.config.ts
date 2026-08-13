@@ -1,7 +1,14 @@
+import { fileURLToPath } from "node:url";
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
+
+// The answer-matching rules and the protocol client live one level up and are
+// consumed as raw TypeScript. Aliasing rather than an npm workspace keeps the
+// dependency one-way and avoids a publish/build step for two dependency-free
+// packages — see docs/integration-plan.md §4.
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -44,9 +51,18 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    resolve: {
+      alias: {
+        "@song-quiz/shared": `${repoRoot}shared`,
+        "@song-quiz/client": `${repoRoot}client`,
+        "@song-quiz/server": `${repoRoot}server`,
+      },
+    },
+    server: {
+      // The aliased sources sit outside this package's root.
+      fs: { allow: [repoRoot] },
+      ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
+    },
     plugins: [
       vinext(),
       sites(),

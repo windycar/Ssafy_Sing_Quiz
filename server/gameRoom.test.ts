@@ -237,7 +237,14 @@ test('ROUND_START never carries the title, artist, or aliases', () => {
 
 // --- First correct answer ---------------------------------------------------
 
-test('a correct answer scores immediately and leaves the round open', () => {
+test('the setlist is scored one point per song, to the first correct answer', () => {
+  // The rule the whole scoring model rests on. If POINTS_BY_PLACE ever grows
+  // another entry, this fails and every assumption below is worth rereading.
+  assert.deepEqual(POINTS_BY_PLACE, [1]);
+  assert.equal(POINTS_PER_WIN, 1);
+});
+
+test('a correct answer scores and ends the round there and then', () => {
   const room = newRoom();
   const host = join(room, '방장', 1_000);
   startFirstRound(room, 2_000);
@@ -245,70 +252,38 @@ test('a correct answer scores immediately and leaves the round open', () => {
 
   const effects = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: '다이나 마이트!' }, host.id, at);
   const accepted = firstOfType(privateMessagesFor(effects, host.id), 'ANSWER_ACCEPTED');
-  assert.equal(accepted?.pointsAwarded, POINTS_PER_WIN);
+  assert.equal(accepted?.pointsAwarded, 1);
   assert.equal(accepted?.place, 1);
-  assert.equal(room.getPlayer(host.id)?.score, POINTS_PER_WIN);
-
-  // Second and third place are still open, so the round keeps running and the
-  // song is not named yet.
-  assert.equal(room.getPhase(), 'IN_ROUND');
-  assert.equal(firstOfType(broadcasts(effects), 'ROUND_REVEAL'), undefined);
-  assert.equal(JSON.stringify(effects).includes('Dynamite'), false);
-});
-
-test('the round closes once every scoring place is taken', () => {
-  const room = newRoom();
-  const players = [
-    join(room, '하나', 1_000),
-    join(room, '둘', 1_001),
-    join(room, '셋', 1_002),
-  ];
-  startFirstRound(room, 2_000);
-  const at = 2_000 + COUNTDOWN_MS + 100;
-
-  let last: Effect[] = [];
-  for (const [index, player] of players.entries()) {
-    last = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, player.id, at + index);
-    const accepted = firstOfType(privateMessagesFor(last, player.id), 'ANSWER_ACCEPTED');
-    assert.equal(accepted?.place, index + 1, `${player.id} should be number ${index + 1}`);
-    assert.equal(accepted?.pointsAwarded, POINTS_BY_PLACE[index]);
-  }
+  assert.equal(room.getPlayer(host.id)?.score, 1);
 
   assert.equal(room.getPhase(), 'REVEAL');
-  const reveal = firstOfType(broadcasts(last), 'ROUND_REVEAL');
+  const reveal = firstOfType(broadcasts(effects), 'ROUND_REVEAL');
   assert.equal(reveal?.song.title, 'Dynamite');
-  assert.equal(reveal?.winner?.playerId, players[0]?.id);
+  assert.equal(reveal?.winner?.playerId, host.id);
   assert.deepEqual(
     reveal?.scorers.map((entry) => [entry.place, entry.pointsAwarded]),
-    [
-      [1, 100],
-      [2, 50],
-      [3, 30],
-    ],
+    [[1, 1]],
   );
-  assert.equal(room.getPlayer(players[1]!.id)?.score, 50);
-  assert.equal(room.getPlayer(players[2]!.id)?.score, 30);
 });
 
-test('a fourth correct answer arrives too late to score', () => {
+test('a second correct answer arrives too late to score', () => {
   const room = newRoom();
-  const scorers = [join(room, '하나', 1_000), join(room, '둘', 1_001), join(room, '셋', 1_002)];
-  const late = join(room, '넷', 1_003);
+  const fast = join(room, '빠름', 1_000);
+  const slow = join(room, '느림', 1_001);
   startFirstRound(room, 2_000);
   const at = 2_000 + COUNTDOWN_MS + 100;
 
-  for (const [index, player] of scorers.entries()) {
-    room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, player.id, at + index);
-  }
+  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, fast.id, at);
+  const effects = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, slow.id, at + 1);
 
-  const effects = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, late.id, at + 10);
-  assert.ok(firstOfType(privateMessagesFor(effects, late.id), 'ANSWER_TOO_LATE'));
-  assert.equal(room.getPlayer(late.id)?.score, 0);
+  assert.ok(firstOfType(privateMessagesFor(effects, slow.id), 'ANSWER_TOO_LATE'));
+  assert.equal(room.getPlayer(slow.id)?.score, 0);
 });
 
 test('a player who already scored is told nothing more about the answer', () => {
-  // Otherwise a scorer could keep guessing to confirm the answer, then pass it
-  // to someone still racing for second.
+  // Only reachable while a round is still open, which one point per round no
+  // longer allows — but the guard stays, because reopening second place is a
+  // one-line change to POINTS_BY_PLACE.
   const room = newRoom();
   const first = join(room, '하나', 1_000);
   join(room, '둘', 1_001);
@@ -320,26 +295,10 @@ test('a player who already scored is told nothing more about the answer', () => 
 
   assert.ok(firstOfType(privateMessagesFor(again, first.id), 'ANSWER_TOO_LATE'));
   assert.equal(firstOfType(privateMessagesFor(again, first.id), 'ANSWER_ACCEPTED'), undefined);
-  assert.equal(room.getPlayer(first.id)?.score, POINTS_PER_WIN, 'no double scoring');
+  assert.equal(room.getPlayer(first.id)?.score, 1, 'no double scoring');
 });
 
-test('a scorer does not move the boards for anyone still guessing', () => {
-  // A leaderboard that twitched mid-round would announce "somebody got it".
-  const room = newRoom();
-  const first = join(room, '하나', 1_000);
-  const other = join(room, '둘', 1_001);
-  startFirstRound(room, 2_000);
-
-  const effects = room.handleMessage(
-    { type: 'SUBMIT_ANSWER', guess: 'Dynamite' },
-    first.id,
-    2_000 + COUNTDOWN_MS + 100,
-  );
-  assert.deepEqual(broadcasts(effects), []);
-  assert.deepEqual(privateMessagesFor(effects, other.id), []);
-});
-
-test('first place goes to one player only, even one microsecond apart', () => {
+test('the point goes to one player only, even one microsecond apart', () => {
   const room = newRoom();
   const fast = join(room, '빠름', 1_000);
   const slow = join(room, '느림', 1_001);
@@ -351,23 +310,19 @@ test('first place goes to one player only, even one microsecond apart', () => {
   const secondEffects = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, slow.id, at);
 
   assert.equal(firstOfType(privateMessagesFor(firstEffects, fast.id), 'ANSWER_ACCEPTED')?.place, 1);
-  assert.equal(firstOfType(privateMessagesFor(secondEffects, slow.id), 'ANSWER_ACCEPTED')?.place, 2);
-  assert.equal(room.getPlayer(fast.id)?.score, POINTS_BY_PLACE[0]);
-  assert.equal(room.getPlayer(slow.id)?.score, POINTS_BY_PLACE[1]);
-  // Only first place counts as winning the round.
-  assert.equal(room.getPlayer(fast.id)?.score !== room.getPlayer(slow.id)?.score, true);
+  assert.equal(firstOfType(privateMessagesFor(secondEffects, slow.id), 'ANSWER_ACCEPTED'), undefined);
+  assert.equal(room.getPlayer(fast.id)?.score, 1);
+  assert.equal(room.getPlayer(slow.id)?.score, 0);
 });
 
-test('a correct answer after the last place is told only that it was late', () => {
+test('a correct answer after the round closed is told only that it was late', () => {
   const room = newRoom();
-  const scorers = [join(room, '하나', 1_000), join(room, '둘', 1_001), join(room, '셋', 1_002)];
-  const slow = join(room, '느림', 1_003);
+  const fast = join(room, '빠름', 1_000);
+  const slow = join(room, '느림', 1_001);
   startFirstRound(room, 2_000);
   const at = 2_000 + COUNTDOWN_MS + 100;
 
-  for (const [index, player] of scorers.entries()) {
-    room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, player.id, at + index);
-  }
+  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, fast.id, at);
   const late = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, slow.id, at + 5);
 
   const messages = privateMessagesFor(late, slow.id);
@@ -502,39 +457,32 @@ test('skipping ends the round with no winner', () => {
   assert.equal(firstOfType(broadcasts(effects), 'ROUND_REVEAL')?.winner, null);
 });
 
-test('skip ends a round early and keeps the points already scored', () => {
+test('skip ends a round nobody has answered', () => {
+  const room = newRoom();
+  join(room, '방장', 1_000);
+  startFirstRound(room, 2_000);
+
+  const skip = closeRound(room, 2_000 + COUNTDOWN_MS + 200);
+  const reveal = firstOfType(broadcasts(skip), 'ROUND_REVEAL');
+  assert.ok(reveal);
+  assert.equal(reveal.winner, null);
+  assert.deepEqual(reveal.scorers, []);
+});
+
+test('skip cannot reveal a round that a correct answer already closed', () => {
   const room = newRoom();
   const host = join(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const at = 2_000 + COUNTDOWN_MS + 200;
 
   room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, host.id, at);
-  const skip = room.handleMessage({ type: 'HOST_SKIP', hostToken: room.hostToken }, null, at + 1);
-
-  // The round was still open — second and third place were unclaimed — so skip
-  // is what closes it, and the one scorer keeps their points and the win.
-  const reveal = firstOfType(broadcasts(skip), 'ROUND_REVEAL');
-  assert.ok(reveal);
-  assert.equal(reveal.winner?.playerId, host.id);
-  assert.equal(reveal.scorers.length, 1);
-  assert.equal(room.getPlayer(host.id)?.score, POINTS_PER_WIN);
-});
-
-test('skip cannot reveal a round that already closed itself', () => {
-  const room = newRoom();
-  const scorers = [join(room, '하나', 1_000), join(room, '둘', 1_001), join(room, '셋', 1_002)];
-  startFirstRound(room, 2_000);
-  const at = 2_000 + COUNTDOWN_MS + 200;
-
-  for (const [index, player] of scorers.entries()) {
-    room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, player.id, at + index);
-  }
   const skip = room.handleMessage({ type: 'HOST_SKIP', hostToken: room.hostToken }, null, at + 10);
   assert.equal(
     skip.some((e) => e.kind === 'broadcast' && e.message.type === 'ROUND_REVEAL'),
     false,
     'a resolved round must not reveal twice',
   );
+  assert.equal(room.getPlayer(host.id)?.score, 1, 'skip does not take the point away');
 });
 
 // --- Round progression ------------------------------------------------------
@@ -555,14 +503,10 @@ test('the game runs every song and then finishes', () => {
   assert.equal(room.getPhase(), 'IN_ROUND');
   assert.equal(firstOfType(broadcasts(secondStart), 'ROUND_START')?.song.index, 1);
 
-  // Round 2 is scored by the only player there, which leaves second and third
-  // place open, so it runs to the deadline rather than closing on the answer.
+  // Round 2 is answered, which closes it immediately.
   room.handleMessage({ type: 'SUBMIT_ANSWER', guess: '피노키오' }, host.id, clock + 100);
-  assert.equal(room.getPhase(), 'IN_ROUND');
-  clock += ROUND_MS;
-  room.tick(clock);
   assert.equal(room.getPhase(), 'REVEAL');
-  clock += REVEAL_MS;
+  clock += REVEAL_MS + 100;
   const over = room.tick(clock);
   assert.equal(room.getPhase(), 'FINISHED');
   const gameOver = firstOfType(broadcasts(over), 'GAME_OVER');
@@ -594,11 +538,9 @@ test('equal scores share a rank and the next distinct score skips ahead', () => 
   join(room, 'd', 1_003);
 
   startFirstRound(room, 2_000);
-  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, a.id, 2_000 + COUNTDOWN_MS + 10);
-
-  // Close round 1, then walk the clock through REVEAL and the next countdown.
-  let clock = 2_000 + COUNTDOWN_MS + 20;
-  closeRound(room, clock);
+  // Round 1 to `a`, which closes it; then walk the clock to round 2.
+  let clock = 2_000 + COUNTDOWN_MS + 10;
+  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, a.id, clock);
   clock += REVEAL_MS;
   room.tick(clock);
   assert.equal(room.getPhase(), 'COUNTDOWN');
@@ -606,8 +548,8 @@ test('equal scores share a rank and the next distinct score skips ahead', () => 
   room.tick(clock);
   assert.equal(room.getPhase(), 'IN_ROUND');
 
-  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: '피노키오' }, b.id, clock + 10);
-  const effects = closeRound(room, clock + 20);
+  // Round 2 to `b`, so the two of them tie on one point each.
+  const effects = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: '피노키오' }, b.id, clock + 10);
 
   const reveal = firstOfType(broadcasts(effects), 'ROUND_REVEAL');
   assert.ok(reveal);
@@ -622,10 +564,12 @@ test('each player receives their own rank alongside the shared top five', () => 
   const room = newRoom();
   const players = Array.from({ length: 7 }, (_, i) => join(room, `p${i}`, 1_000 + i));
   startFirstRound(room, 2_000);
-  const at = 2_000 + COUNTDOWN_MS + 10;
-  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, players[6].id, at);
-  // The boards are published at REVEAL, not when a player scores.
-  const effects = closeRound(room, at + 1);
+  // The boards are published at REVEAL, which a correct answer triggers.
+  const effects = room.handleMessage(
+    { type: 'SUBMIT_ANSWER', guess: 'Dynamite' },
+    players[6].id,
+    2_000 + COUNTDOWN_MS + 10,
+  );
 
   const updates = effects.filter((e) => e.kind === 'send' && e.message.type === 'LEADERBOARD_UPDATE');
   assert.equal(updates.length, 7, 'every player gets one update');
@@ -833,7 +777,7 @@ test('a YouTube round is judged and revealed like any other', () => {
   const effects = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'hype boy' }, guest.id, 5_000);
   assert.ok(firstOfType(privateMessagesFor(effects, guest.id), 'ANSWER_ACCEPTED'));
 
-  const reveal = firstOfType(broadcasts(closeRound(room, 5_100)), 'ROUND_REVEAL');
+  const reveal = firstOfType(broadcasts(effects), 'ROUND_REVEAL');
   assert.ok(reveal);
   assert.equal(reveal.song.title, 'Hype boy');
   assert.equal(reveal.winner?.playerId, guest.id);

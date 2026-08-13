@@ -76,11 +76,12 @@ test('answer feedback is private and a late guess carries no verdict', () => {
   });
 
   assert.deepEqual(
-    reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 100, place: 1 }]).answerFeedback,
-    { kind: 'accepted', pointsAwarded: 100, place: 1 },
+    reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 1, place: 1 }]).answerFeedback,
+    { kind: 'accepted', pointsAwarded: 1, place: 1 },
   );
 
-  // Second and third place score too, and the round is still running.
+  // The reducer reports whatever the server awarded rather than assuming the
+  // current one-point rule, so a scoring change needs no client release.
   assert.deepEqual(
     reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 50, place: 2 }]).answerFeedback,
     { kind: 'accepted', pointsAwarded: 50, place: 2 },
@@ -524,12 +525,8 @@ test('a host and a player play a full game through the real client', async () =>
     // form win here, and the server is the only thing that judged it.
     guest.submitAnswer('좋은 날');
     await waitUntil(guest, (state) => state.answerFeedback.kind === 'accepted', 'the win');
-    assert.equal(host.getState().reveal, null, 'second and third place are still open');
 
-    // Only two players are in the room, so nobody can take the remaining
-    // places. The host closes the round rather than waiting out the deadline.
-    host.hostSkip();
-
+    // One point per song, so that answer is what ends the round.
     const revealed = await waitUntil(host, (state) => state.reveal !== null, 'the reveal');
     assert.equal(revealed.reveal?.title, '좋은 날');
     assert.equal(revealed.reveal?.winner?.nickname, '참가자');
@@ -541,7 +538,7 @@ test('a host and a player play a full game through the real client', async () =>
     const final = await waitUntil(host, (state) => state.phase === 'FINISHED', 'the game to end');
     assert.equal(final.finalRanks?.length, 2);
     assert.equal(final.finalRanks?.[0]?.nickname, '참가자');
-    assert.equal(final.finalRanks?.[0]?.score, 100);
+    assert.equal(final.finalRanks?.[0]?.score, 1);
   } finally {
     host.disconnect();
     guest.disconnect();

@@ -51,12 +51,15 @@ export const REVEAL_MS = 4_000;
 /**
  * Points by finishing place, first to last.
  *
- * Rewarding more than the single fastest player is what keeps a round alive
- * for everyone else: with a winner-takes-all rule, one quick player decides
- * every round in a few seconds and the other nineteen stop trying. The length
- * of this array is also how many correct answers end a round early.
+ * One entry means winner-takes-all: the first correct answer scores and ends
+ * the round there and then. That is the right shape for a long setlist —
+ * across a hundred songs the spread comes from how many rounds you win, not
+ * from how much any single one was worth, and the game keeps moving.
+ *
+ * The length of this array is also how many correct answers end a round early,
+ * so adding entries reopens second and third place with no other change.
  */
-export const POINTS_BY_PLACE: readonly number[] = [100, 50, 30];
+export const POINTS_BY_PLACE: readonly number[] = [1];
 /** Points for winning a round (realtime-protocol.md §5). */
 export const POINTS_PER_WIN = POINTS_BY_PLACE[0] as number;
 /** How many players may score before the round closes. */

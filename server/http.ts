@@ -23,7 +23,8 @@ import { lookupVideo } from './youtubeLookup.ts';
 export const MAX_ROOMS = 500;
 export const MAX_BODY_BYTES = 512 * 1024;
 export const MAX_MEDIA_URL_LENGTH = 2048;
-export const MAX_SONGS_PER_GAME = 50;
+/** A hundred one-minute rounds is already a long event; this is the ceiling. */
+export const MAX_SONGS_PER_GAME = 100;
 export const MAX_MEDIA_REGISTRATIONS = 1_000;
 
 /**

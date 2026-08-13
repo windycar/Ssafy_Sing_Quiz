@@ -178,14 +178,9 @@ test('two clients play a full round over real sockets', async () => {
     guest.send({ type: 'SUBMIT_ANSWER', guess: '다이나 마이트' });
     const accepted = await guest.waitFor('ANSWER_ACCEPTED');
     assert.equal(accepted.place, 1);
-    assert.equal(accepted.pointsAwarded, 100);
-    // Second and third place are unclaimed, so the round is still running and
-    // the host has heard nothing about it.
-    assert.equal(host.countOf('ROUND_REVEAL'), 0);
+    assert.equal(accepted.pointsAwarded, 1);
 
-    // With two players in the room, the host closes it.
-    host.send({ type: 'HOST_SKIP', hostToken: room.hostToken });
-
+    // One point per song, so the first correct answer ends the round.
     const reveal = await host.waitFor('ROUND_REVEAL');
     assert.equal(reveal.song.title, 'Dynamite');
     assert.equal(reveal.winner?.nickname, '참가자');
@@ -195,7 +190,7 @@ test('two clients play a full round over real sockets', async () => {
     const hostUpdate = await host.waitFor('LEADERBOARD_UPDATE');
     const guestUpdate = await guest.waitFor('LEADERBOARD_UPDATE');
     assert.equal(hostUpdate.you.score, 0);
-    assert.equal(guestUpdate.you.score, 100);
+    assert.equal(guestUpdate.you.score, 1);
     assert.equal(guestUpdate.you.rank, 1);
 
     // One song only, so the reveal timer ends the game.

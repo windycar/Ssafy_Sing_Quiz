@@ -591,7 +591,12 @@ function renderFeedback(state: ClientState): void {
 
   switch (state.answerFeedback.kind) {
     case 'accepted':
-      node.textContent = `정답입니다! ${state.answerFeedback.place}등 +${state.answerFeedback.pointsAwarded}점`;
+      // The place is only worth saying when more than one player can score;
+      // with one point per round it is always 1st and reads as noise.
+      node.textContent =
+        state.answerFeedback.place > 1
+          ? `정답입니다! ${state.answerFeedback.place}등 +${state.answerFeedback.pointsAwarded}점`
+          : `정답입니다! +${state.answerFeedback.pointsAwarded}점`;
       node.classList.add('ok');
       break;
     case 'rejected':
@@ -656,8 +661,8 @@ function render(state: ClientState): void {
       el('reveal-title').textContent = state.reveal?.title ?? '';
       el('reveal-artist').textContent = state.reveal?.artist ?? '';
 
-      // Everyone who scored, in order, so second and third see their place
-      // named rather than only the winner being celebrated.
+      // Everyone who scored, in order. With one point per round that is a
+      // single name, but the loop covers a setlist scored several places deep.
       const scorers = state.reveal?.scorers ?? [];
       const node = el('reveal-winner');
       node.classList.remove('ok', 'no');
@@ -667,7 +672,8 @@ function render(state: ClientState): void {
         node.textContent = scorers
           .map((entry) => {
             const who = entry.playerId === state.playerId ? '나' : entry.nickname;
-            return `${entry.place}등 ${who} +${entry.pointsAwarded}점`;
+            const place = scorers.length > 1 ? `${entry.place}등 ` : '';
+            return `${place}${who} +${entry.pointsAwarded}점`;
           })
           .join(' · ');
         if (scorers.some((entry) => entry.playerId === state.playerId)) node.classList.add('ok');

@@ -490,7 +490,7 @@ export default function Home() {
                 <input
                   type="range"
                   min="1"
-                  max="50"
+                  max="100"
                   step="1"
                   value={songCount}
                   onChange={(event) => setSongCount(Number(event.target.value))}
@@ -946,7 +946,9 @@ function Feedback({ state }: { state: ClientState | null }) {
       <div className="system-message">
         <i>✓</i>
         <p>
-          <b>정답입니다!</b> {feedback.place}등 +{feedback.pointsAwarded}점
+          {/* The place is only worth saying when more than one player can
+              score; with one point per round it is always 1st. */}
+          <b>정답입니다!</b> {feedback.place > 1 ? `${feedback.place}등 ` : ""}+{feedback.pointsAwarded}점
         </p>
       </div>
     );

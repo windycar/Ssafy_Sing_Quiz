@@ -1,0 +1,147 @@
+# Drop the Beat — 2010~현재 국내 히트곡 100선
+#
+# 기준: 2010년부터 2026년 8월 13일까지 국내 주요 디지털 차트
+# (가온/써클 디지털 차트 및 멜론 TOP100) 100위 안에 든 곡 중
+# 노래 맞히기 게임에 적합한 대표곡을 시대별로 고르게 선정했습니다.
+# 연도 표시는 발매 연도 또는 해당 연말/주간 차트의 기준 연도입니다.
+# 차트 확인: https://circlechart.kr/ / https://www.melon.com/chart/
+#
+# 실행 예시:
+#   node server/main.ts --playlist data/playlist.top100.txt
+#
+# 유튜브 링크는 음원 파일이 아닙니다. 행사 전 외부 재생 가능 여부를 확인하고,
+# 저작권자 또는 행사장이 요구하는 이용 허락을 별도로 확보하세요.
+
+# --- 2010 (6곡) -----------------------------------------------------------
+https://youtu.be/8TeeJvcBdLA | Bad Girl Good Girl, 배드 걸 굿 걸
+https://youtu.be/3e8lvcnX648 | 잔소리, Nagging
+https://youtu.be/IF4oaPVq_Ro | 죽어도 못 보내, Can't Let You Go Even If I Die
+https://youtu.be/TGbwL8kSpEk | Oh!, 오
+https://youtu.be/Rxh3_sr5UAE | 2 Different Tears, 투 디퍼런트 티어스
+https://youtu.be/jeqdYqsrsA0 | 좋은 날, Good Day
+
+# --- 2011 (6곡) -----------------------------------------------------------
+https://youtu.be/fpBt3aMROos | Roly-Poly, 롤리폴리
+https://youtu.be/j7_lSP8Vc3o | 내가 제일 잘 나가, I Am The Best
+https://youtu.be/NY47mqz4yCg | 비가 오는 날엔, On Rainy Days
+https://youtu.be/Pj3q0ZChgFE | So Cool, 쏘쿨
+https://youtu.be/s-zRAQmKUkI | Trouble Maker, 트러블메이커
+https://youtu.be/f_iQRO5BdCM | 너랑 나, You and I
+
+# --- 2012 (6곡) -----------------------------------------------------------
+https://youtu.be/9bZkp7q19f0 | 강남스타일, Gangnam Style
+https://youtu.be/tXV7dfvSefo | 벚꽃 엔딩, Cherry Blossom Ending
+https://youtu.be/E0ZHXVp_wUE | 나혼자, Alone
+https://youtu.be/AAbokV76tkU | FANTASTIC BABY, 판타스틱 베이비
+https://youtu.be/oL2AlXWVbKU | Loving U, 러빙유
+https://youtu.be/nN97f8ssW8E | All For You, 올 포 유
+
+# --- 2013 (6곡) -----------------------------------------------------------
+https://youtu.be/_uYx13TPm-A | Bounce, 바운스
+https://youtu.be/hspqQuuuGIw | NoNoNo, 노노노
+https://youtu.be/H-IJWqIHioA | 이름이 뭐예요?, 이름이 뭐예요, What's Your Name
+https://youtu.be/RKhsHGfrFmY | 삐딱하게, Crooked
+https://youtu.be/p6XLNsJ9YrA | Give It To Me, 기브 잇 투 미
+https://youtu.be/yMqL1iWfku4 | 빠빠빠, Bar Bar Bar
+
+# --- 2014 (6곡) -----------------------------------------------------------
+https://youtu.be/Y-FhDScM_2w | 썸, Some
+https://youtu.be/UwuAPyOImoI | 눈 코 입, 눈, 코, 입, Eyes Nose Lips
+https://youtu.be/ouR4nn1G9r4 | 봄 사랑 벚꽃 말고, 봄, 사랑, 벚꽃 말고, Not Spring Love or Cherry Blossoms
+https://youtu.be/OxgiiyLp5pk | 야생화, Wild Flower
+https://youtu.be/0Oi8jDMvd_w | 200%, 이백퍼센트
+https://youtu.be/akPDKYwIoVk | Something, 썸씽
+
+# --- 2015 (6곡) -----------------------------------------------------------
+https://youtu.be/2ips2mM7Zqw | 뱅뱅뱅, BANG BANG BANG
+https://youtu.be/1CTced9CMMk | LOSER, 루저
+https://youtu.be/hfXZ6ydgZyo | 위아래, UP&DOWN, Up and Down
+https://youtu.be/Ibb5RhoKfzE | 꺼내 먹어요, Eat
+https://youtu.be/XGdbaEDVWp0 | Dumb Dumb, 덤덤
+https://youtu.be/0rtV5esQT6I | OOH-AHH하게, 우아하게, Like OOH-AHH
+
+# --- 2016 (6곡) -----------------------------------------------------------
+https://youtu.be/c7rCyll5AeY | CHEER UP, 치어 업
+https://youtu.be/r_6q_-d-7Sk | 시간을 달려서, Rough
+https://youtu.be/va5rf20Un24 | 어디에도, No Matter Where
+https://youtu.be/MfYPKZl7W1w | 널 사랑하지 않아, I Don't Love You
+https://youtu.be/PYGODWJgR-c | Why So Lonely, 와이 소 론리
+https://youtu.be/QslJYDX3o8s | 러시안 룰렛, Russian Roulette
+
+# --- 2017 (6곡) -----------------------------------------------------------
+https://youtu.be/BzYnNdJhZQw | 밤편지, Through the Night
+https://youtu.be/6rS7OUGXUik | 첫눈처럼 너에게 가겠다, I Will Go to You Like the First Snow
+https://youtu.be/WyiIGEHQP8o | 빨간 맛, Red Flavor
+https://youtu.be/afxLaQiLu-o | 비도 오고 그래서, You Clouds Rain
+https://youtu.be/4tBnF46ybZk | REALLY REALLY, 릴리 릴리
+https://youtu.be/xEeFrLSkMm8 | 봄날, Spring Day
+
+# --- 2018 (6곡) -----------------------------------------------------------
+https://youtu.be/vecSVX1QYbQ | 사랑을 했다, LOVE SCENARIO
+https://youtu.be/IHNzOHi8sJs | 뚜두뚜두, DDU-DU DDU-DU
+https://youtu.be/JQGRg8XBnB4 | 뿜뿜, BBoom BBoom
+https://youtu.be/1q_t6RNuH8c | 모든 날 모든 순간, 모든 날, 모든 순간, Every Day Every Moment
+https://youtu.be/i0p1bmr0EmE | What is Love?, What is Love, 왓 이즈 러브
+https://youtu.be/J_CFBjAyPWE | Bad Boy, 배드 보이
+
+# --- 2019 (6곡) -----------------------------------------------------------
+https://youtu.be/XsX3ATc3FbA | 작은 것들을 위한 시, Boy With Luv
+https://youtu.be/GdoNGNe5CSg | 주저하는 연인들을 위해, For Lovers Who Hesitate
+https://youtu.be/m3DZsBw5bnE | 어떻게 이별까지 사랑하겠어 널 사랑하는 거지, 어떻게 이별까지 사랑하겠어, 널 사랑하는 거지
+https://youtu.be/HlN2BXNJzxA | 벌써 12시, Gotta Go
+https://youtu.be/pNfTK39k55U | 달라달라, DALLA DALLA
+https://youtu.be/4HG_CJzyX6A | 사계, Four Seasons
+
+# --- 2020 (6곡) -----------------------------------------------------------
+https://youtu.be/UdyjeUwPz_E | 아무노래, Any Song
+https://youtu.be/gdZLi9oWNZg | Dynamite, 다이너마이트
+https://youtu.be/TgOu00Mf3kI | 에잇, eight
+https://youtu.be/ioNng23DkIM | How You Like That, 하우 유 라이크 댓
+https://youtu.be/iDjQSdN_ig8 | 살짝 설렜어, Nonstop
+https://youtu.be/fE2h3lGlOsk | WANNABE, 워너비
+
+# --- 2021 (6곡) -----------------------------------------------------------
+https://youtu.be/0-q1KafFCLU | Celebrity, 셀러브리티
+https://youtu.be/4TWR90KJl84 | Next Level, 넥스트 레벨
+https://youtu.be/WMweEpGlu_U | Butter, 버터
+https://youtu.be/SK6Sm2Ki9tI | 신호등, Traffic Light
+https://youtu.be/aIl0pRlx_M4 | 롤린, Rollin'
+https://youtu.be/--FmExEAsM8 | ELEVEN, 일레븐
+
+# --- 2022 (6곡) -----------------------------------------------------------
+https://youtu.be/Y8JFxS1HlDo | LOVE DIVE, 러브 다이브
+https://youtu.be/Jh4QFaPmdss | TOMBOY, 톰보이
+https://youtu.be/9wUKhEgnllc | Hype Boy, 하입보이
+https://youtu.be/F0B7HDiY-10 | After LIKE, 애프터 라이크
+https://youtu.be/js1CtxSY38I | Attention, 어텐션
+https://youtu.be/8dJyRm2jJ-U | That That, 댓 댓
+
+# --- 2023 (6곡) -----------------------------------------------------------
+https://youtu.be/pSUydWEqKwE | Ditto, 디토
+https://youtu.be/6ZUIwj3FgUY | I AM, 아이엠
+https://youtu.be/ArmDp-zijuc | Super Shy, 슈퍼 샤이
+https://youtu.be/QU9c0053UAU | Seven, 세븐
+https://youtu.be/7HDeem-JaSY | 퀸카, Queencard
+https://youtu.be/hLvWy2b857I | Perfect Night, 퍼펙트 나이트
+
+# --- 2024 (6곡) -----------------------------------------------------------
+https://youtu.be/phuiiNCxRMg | Supernova, 슈퍼노바
+https://youtu.be/hVAc1Vf2ITU | 첫 만남은 계획대로 되지 않아, 첫만남은 계획대로 되지 않아, plot twist
+https://youtu.be/Vk5-c_v4gMU | Magnetic, 마그네틱
+https://youtu.be/ekr2nIex040 | APT., 아파트, APT
+https://youtu.be/ax1csKKQnns | Love wins all, 러브 윈즈 올
+https://youtu.be/sWXGbkM0tBI | HAPPY, 해피
+
+# --- 2025 (6곡) -----------------------------------------------------------
+https://youtu.be/tiKFuzpX-NA | Drowning, 드라우닝
+https://youtu.be/jWQx2f-CErU | Whiplash, 위플래시
+https://youtu.be/fLi0EJfi_vg | HOME SWEET HOME, 홈 스위트 홈
+https://youtu.be/B4mLKcVIERs | 오늘만 I LOVE YOU, 오늘만 아이 러브 유, If I Say I Love You
+https://youtu.be/XD00TJ-6WSw | like JENNIE, 라이크 제니
+https://youtu.be/g36q0ZLvygQ | REBEL HEART, 레블 하트
+
+# --- 2026년 8월 13일 현재 (4곡) ------------------------------------------
+https://youtu.be/Qe8fa4b5xNU | Good Goodbye, 굿 굿바이
+https://youtu.be/zhHB4dZTChw | 404 (New Era), 404, 포오포
+https://youtu.be/F7sGJVUrkjQ | RUDE!, RUDE, 루드
+https://youtu.be/SNn_H_Q2moo | 기쁨 슬픔 아름다운 마음, 기쁨, 슬픔, 아름다운 마음, Joy Sorrow A Beautiful Heart

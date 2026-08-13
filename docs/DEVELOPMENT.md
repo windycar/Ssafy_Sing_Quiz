@@ -88,7 +88,8 @@ npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json
 
 | 옵션 | 뜻 |
 | --- | --- |
-| `--songs <경로>` | 곡 JSON. 배열이거나 `{"songs": [...]}` 형식 |
+| `--playlist <경로>` | 유튜브 링크 목록 txt. 이걸 주면 여기 적힌 곡만 출제합니다 |
+| `--songs <경로>` | 곡 JSON. 배열이거나 `{"songs": [...]}` 형식. `--playlist`와 함께 쓰면 링크만 적힌 줄을 대조할 카탈로그가 됩니다 |
 | `--port <번호>` | 기본 8787 |
 | `--origin <주소>` | 허용할 출처. **여러 번 지정 가능.** 생략하면 Origin 검사와 CORS 검사가 모두 꺼집니다 — 로컬 전용 |
 | `--demo-clips` | 음원이 비어 있는 곡에 자리표시자를 채우는 개발 전용 옵션 (소리는 나지 않습니다) |
@@ -145,7 +146,7 @@ npx tsc --noEmit -p .
 
 의존성이 없으므로 실행과 테스트에는 `npm.cmd install`이 필요하지 않습니다
 (`tsc` 실행에만 TypeScript와 `@types/node`가 필요합니다). 현재 테스트는
-**128개**(`shared` 30개, `server` 77개, `client` 21개)이며 모두 통과해야 합니다.
+**177개**(`shared` 59개, `server` 97개, `client` 21개)이며 모두 통과해야 합니다.
 Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 미만에서는 문법
 오류로 실패합니다.**
 
@@ -174,6 +175,12 @@ Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 �
 | `docs/USER_GUIDE.md` / `docs/SONG_DATA_GUIDE.md` / `docs/DEVELOPMENT.md` / `docs/OPERATIONS.md` | 사용자·데이터·개발·운영 가이드 (이 문서) |
 | `shared/answerMatching.ts` | 정답 정규화(NFKC, 소문자화, 문자/숫자만 남기기) 및 별칭 매칭 |
 | `shared/songCatalog.ts` | 원본 곡 레코드를 `SongConfig`로 검증·변환, 괄호 별칭 자동 확장, 방장 음원 등록 병합 |
+| `shared/youtube.ts` | 유튜브 링크 파싱, 영상 제목으로 곡 식별(짧은 제목은 가수까지 일치해야 인정), oEmbed 주소 생성 |
+| `shared/playlist.ts` | 플레이리스트 txt 파서. 잘못된 줄은 줄 번호와 함께 보고하고 나머지는 살립니다 |
+| `server/youtubeLookup.ts` | oEmbed로 영상 제목 조회. HTTP 라우트와 시작 시 로더가 같이 씁니다 |
+| `server/playlistLoader.ts` | 파싱된 플레이리스트를 실제 곡 레코드로 해석. 조회 함수를 주입받아 네트워크 없이 테스트합니다 |
+| `scripts/host.ts` | Cloudflare 임시 터널을 띄워 공개 주소를 얻고, 그 주소를 `--origin`으로 넘겨 서버 실행 |
+| `scripts/start-event.cmd` | 위 스크립트를 더블클릭으로 실행하는 런처 (내용은 전부 ASCII — cmd가 한글 배치 파일을 깨뜨립니다) |
 | `server/gameRoom.ts` | 방 상태 기계. 소켓·시계·타이머를 모르는 순수 로직 |
 | `server/protocol.ts` | 와이어 프로토콜 타입과 수신 메시지 검증 |
 | `server/websocket.ts` | `node:http` 위에 직접 구현한 RFC 6455 전송 계층 |

@@ -70,6 +70,30 @@ npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json --origin http://l
 `--origin`을 생략하면 **Origin 검사와 CORS 검사가 모두 꺼집니다.** 로컬 개발에서만
 생략하세요. 공개 배포에서는 서비스 도메인을 반드시 지정해야 합니다.
 
+### 임시 공개 주소로 실행 (행사용)
+
+참가자가 방장과 같은 네트워크에 있다는 보장이 없을 때 씁니다. 학교·회사
+Wi-Fi는 기기 간 통신을 막아 두는 경우가 흔해서, 랜 주소는 옆자리에서도 열리지
+않을 수 있습니다.
+
+```powershell
+node scripts\host.ts --playlist playlist.txt --songs data\songs.recovered.json
+```
+
+터널을 **먼저** 띄워 주소를 받고, 그 주소를 `--origin`으로 넘겨 서버를 켭니다.
+순서가 뒤바뀌면 주소를 모르는 채로 서버를 켜야 하고, 그러면 Origin 검사를 끌
+수밖에 없습니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| 필요 도구 | `cloudflared` (`winget install --id Cloudflare.cloudflared`) |
+| 계정 | 불필요 (quick tunnel) |
+| 주소 수명 | 프로세스가 살아 있는 동안만. 재시작하면 주소가 바뀝니다 |
+| 접근 제어 | 주소를 아는 사람은 누구나 접속 가능. 방을 지키는 것은 참여 코드입니다 |
+
+이미 종료된 주소로 접속하면 Cloudflare가 **오류 1033**을 반환합니다. 서버가
+죽은 것이 아니라 그 주소가 사라진 것이므로, 다시 실행해 새 주소를 배포하세요.
+
 ### 정적 서빙에 관한 제약 (공개 배포 전 반드시 변경)
 
 `server/staticFiles.ts`는 `client/`와 `shared/`의 TypeScript 원본을 요청 때마다

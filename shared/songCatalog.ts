@@ -28,6 +28,14 @@ export interface RawSongRecord {
   /** Seconds in the recovered file; null until a host sets the clip. */
   clipStart?: number | null;
   clipEnd?: number | null;
+  /**
+   * A YouTube video the host plays in the room instead of the server serving
+   * audio. Present means "live playback": no `mediaUrl` is needed, and this id
+   * must never reach a player (see `toRoundPublicPayload`).
+   */
+  youtubeId?: string | null;
+  /** Seconds into the video to start from. Defaults to 0. */
+  youtubeStart?: number | null;
   source?: string;
 }
 
@@ -37,9 +45,15 @@ export interface SongConfig {
   title: string;
   artist: string;
   aliases: string[];
+  /** Empty for a YouTube song: nothing is served to players to play. */
   mediaUrl: string;
   clipStartMs: number;
   clipEndMs: number;
+  /**
+   * Secret, like the title. Only the host's machine may learn it, because the
+   * video's own title gives the answer away.
+   */
+  youtubeId: string | null;
 }
 
 export interface CatalogIssue {
@@ -53,7 +67,8 @@ export interface CatalogIssue {
     | 'CLIP_TOO_SHORT'
     | 'CLIP_TOO_LONG'
     | 'NO_USABLE_ALIAS'
-    | 'DUPLICATE_ALIAS';
+    | 'DUPLICATE_ALIAS'
+    | 'INVALID_YOUTUBE_ID';
   message: string;
 }
 
@@ -67,6 +82,20 @@ export interface SongCatalog {
 /** Product spec: clips are 5–15 seconds. */
 export const MIN_CLIP_MS = 5_000;
 export const MAX_CLIP_MS = 15_000;
+
+/**
+ * How long the host plays a YouTube video for.
+ *
+ * A round lasts this plus `ANSWER_GRACE_MS` (10 s) from `server/gameRoom.ts`,
+ * which makes one round exactly a minute. Those two constants live in
+ * different modules on purpose — `shared/` must not import from `server/` —
+ * so `gameRoom.test.ts` asserts the minute they add up to. Change one and
+ * that test tells you.
+ */
+export const YOUTUBE_CLIP_MS = 50_000;
+
+/** Same alphabet and length YouTube itself uses. */
+const YOUTUBE_ID = /^[\w-]{11}$/u;
 
 /**
  * Parenthetical segments that are credits, not alternate titles. A player
@@ -149,51 +178,77 @@ export function buildSongCatalog(records: readonly RawSongRecord[]): SongCatalog
     // Playability is checked before aliases are claimed: a song that can
     // never be played must not reserve an alias and push a playable song
     // into a spurious DUPLICATE_ALIAS.
-    const mediaUrl = (record.mediaUrl ?? '').trim();
-    if (mediaUrl.length === 0) {
-      issues.push({
-        songId,
-        code: 'MISSING_MEDIA_URL',
-        message: '재생 가능한 미디어 URL이 없습니다. 방장이 등록해야 합니다.',
-      });
-      continue;
-    }
+    const youtubeId = (record.youtubeId ?? '').trim();
+    let mediaUrl: string;
+    let clipStartMs: number;
+    let clipEndMs: number;
 
-    const clipStartMs = clipToMs(record.clipStart);
-    const clipEndMs = clipToMs(record.clipEnd);
-    if (clipStartMs === null || clipEndMs === null) {
-      issues.push({
-        songId,
-        code: 'MISSING_CLIP_RANGE',
-        message: 'clipStart/clipEnd 값이 없습니다.',
-      });
-      continue;
-    }
+    if (youtubeId.length > 0) {
+      // Live playback: the host's browser plays the video in the room, so the
+      // server serves no audio and the 5–15 s clip rule does not apply.
+      if (!YOUTUBE_ID.test(youtubeId)) {
+        issues.push({
+          songId,
+          code: 'INVALID_YOUTUBE_ID',
+          message: `유튜브 영상 ID "${youtubeId}" 형식이 올바르지 않습니다.`,
+        });
+        continue;
+      }
+      const startMs = clipToMs(record.youtubeStart) ?? 0;
+      mediaUrl = '';
+      clipStartMs = Math.max(0, startMs);
+      clipEndMs = clipStartMs + YOUTUBE_CLIP_MS;
+    } else {
+      const url = (record.mediaUrl ?? '').trim();
+      if (url.length === 0) {
+        issues.push({
+          songId,
+          code: 'MISSING_MEDIA_URL',
+          message: '재생 가능한 미디어 URL이 없습니다. 방장이 등록해야 합니다.',
+        });
+        continue;
+      }
 
-    const duration = clipEndMs - clipStartMs;
-    if (clipStartMs < 0 || duration <= 0) {
-      issues.push({
-        songId,
-        code: 'CLIP_RANGE_INVALID',
-        message: 'clipEnd 는 clipStart 보다 커야 하며 clipStart 는 0 이상이어야 합니다.',
-      });
-      continue;
-    }
-    if (duration < MIN_CLIP_MS) {
-      issues.push({
-        songId,
-        code: 'CLIP_TOO_SHORT',
-        message: `클립 길이 ${duration}ms 는 최소 ${MIN_CLIP_MS}ms 보다 짧습니다.`,
-      });
-      continue;
-    }
-    if (duration > MAX_CLIP_MS) {
-      issues.push({
-        songId,
-        code: 'CLIP_TOO_LONG',
-        message: `클립 길이 ${duration}ms 는 최대 ${MAX_CLIP_MS}ms 를 초과합니다.`,
-      });
-      continue;
+      const start = clipToMs(record.clipStart);
+      const end = clipToMs(record.clipEnd);
+      if (start === null || end === null) {
+        issues.push({
+          songId,
+          code: 'MISSING_CLIP_RANGE',
+          message: 'clipStart/clipEnd 값이 없습니다.',
+        });
+        continue;
+      }
+
+      const duration = end - start;
+      if (start < 0 || duration <= 0) {
+        issues.push({
+          songId,
+          code: 'CLIP_RANGE_INVALID',
+          message: 'clipEnd 는 clipStart 보다 커야 하며 clipStart 는 0 이상이어야 합니다.',
+        });
+        continue;
+      }
+      if (duration < MIN_CLIP_MS) {
+        issues.push({
+          songId,
+          code: 'CLIP_TOO_SHORT',
+          message: `클립 길이 ${duration}ms 는 최소 ${MIN_CLIP_MS}ms 보다 짧습니다.`,
+        });
+        continue;
+      }
+      if (duration > MAX_CLIP_MS) {
+        issues.push({
+          songId,
+          code: 'CLIP_TOO_LONG',
+          message: `클립 길이 ${duration}ms 는 최대 ${MAX_CLIP_MS}ms 를 초과합니다.`,
+        });
+        continue;
+      }
+
+      mediaUrl = url;
+      clipStartMs = start;
+      clipEndMs = end;
     }
 
     const candidates = [...expandTitleAliases(title), ...(record.aliases ?? [])];
@@ -229,6 +284,7 @@ export function buildSongCatalog(records: readonly RawSongRecord[]): SongCatalog
       mediaUrl,
       clipStartMs,
       clipEndMs,
+      youtubeId: youtubeId.length > 0 ? youtubeId : null,
     });
   }
 
@@ -241,13 +297,28 @@ export function buildSongCatalog(records: readonly RawSongRecord[]): SongCatalog
  * The recovered catalog ships with `mediaUrl: null` on every record, so this
  * is the only way a real song becomes playable. Seconds rather than
  * milliseconds, to match `RawSongRecord` and the source data.
+ *
+ * Two mutually exclusive kinds: a hosted audio clip (`mediaUrl` + a 5–15 s
+ * range), or a YouTube video the host plays in the room (`youtubeId`).
  */
-export interface MediaRegistration {
-  id: string;
-  mediaUrl: string;
-  clipStart: number;
-  clipEnd: number;
-}
+export type MediaRegistration =
+  | {
+      id: string;
+      mediaUrl: string;
+      clipStart: number;
+      clipEnd: number;
+      youtubeId?: undefined;
+      youtubeStart?: undefined;
+    }
+  | {
+      id: string;
+      youtubeId: string;
+      /** Seconds into the video. Omitted means from the beginning. */
+      youtubeStart?: number;
+      mediaUrl?: undefined;
+      clipStart?: undefined;
+      clipEnd?: undefined;
+    };
 
 /**
  * Overlays host registrations onto raw records, returning a new array.
@@ -270,11 +341,27 @@ export function applyMediaRegistrations(
   return records.map((record) => {
     const registration = byId.get(record.id);
     if (registration === undefined) return record;
+
+    // The two kinds are exclusive, so registering one clears the other. A song
+    // left holding both would depend on `buildSongCatalog`'s branch order to
+    // decide how it plays, which is not something a host can see.
+    if (registration.youtubeId !== undefined) {
+      return {
+        ...record,
+        youtubeId: registration.youtubeId,
+        youtubeStart: registration.youtubeStart ?? 0,
+        mediaUrl: null,
+        clipStart: null,
+        clipEnd: null,
+      };
+    }
     return {
       ...record,
       mediaUrl: registration.mediaUrl,
       clipStart: registration.clipStart,
       clipEnd: registration.clipEnd,
+      youtubeId: null,
+      youtubeStart: null,
     };
   });
 }
@@ -291,7 +378,12 @@ export function createSongMatcher(song: SongConfig): AliasMatcher {
 /**
  * The public payload for a round. Exists so the server has exactly one
  * function that decides what leaves the process before REVEAL — see
- * claude-analysis.md §7. Never returns `title`, `artist`, or `aliases`.
+ * claude-analysis.md §7. Never returns `title`, `artist`, `aliases`, or
+ * `youtubeId`.
+ *
+ * `youtubeId` is as secret as the title: the video's own title names the song,
+ * so handing it to a player is handing them the answer. It reaches the host
+ * alone, through a separate targeted message (`ROUND_CUE`).
  */
 export function toRoundPublicPayload(
   song: SongConfig,
@@ -302,15 +394,21 @@ export function toRoundPublicPayload(
   mediaUrl: string;
   clipStartMs: number;
   clipEndMs: number;
+  /** True when the host plays the song in the room and nobody else plays anything. */
+  livePlayback: boolean;
 } {
+  const livePlayback = song.youtubeId !== null;
   return {
     song: {
       index,
       totalSongs,
       clipDurationMs: song.clipEndMs - song.clipStartMs,
     },
-    mediaUrl: song.mediaUrl,
+    // Not merely empty-by-accident: a live-playback round has no URL for a
+    // player to fetch, and the client keys off `livePlayback`, not this.
+    mediaUrl: livePlayback ? '' : song.mediaUrl,
     clipStartMs: song.clipStartMs,
     clipEndMs: song.clipEndMs,
+    livePlayback,
   };
 }

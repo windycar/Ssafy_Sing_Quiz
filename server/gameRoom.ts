@@ -276,10 +276,36 @@ export class GameRoom {
     this.tokenIndex.set(player.token, player.id);
     if (player.isHost) this.hostPlayerId = player.id;
 
-    return [
+    const effects: Effect[] = [
       { kind: 'send', to: player.id, message: this.buildRoomState(player, now) },
       { kind: 'broadcast', message: { type: 'PLAYER_JOINED', player: this.toSummary(player) } },
     ];
+    const cue = this.cueFor(player);
+    if (cue !== null) effects.push(cue);
+    return effects;
+  }
+
+  /**
+   * The play-this cue for one player, or null if they must not have it.
+   *
+   * A host who joins or refreshes mid-round would otherwise have a running
+   * deadline and no video, so the cue is re-sent on every path that hands out
+   * a room snapshot — and only ever to the host.
+   */
+  private cueFor(player: Player): Effect | null {
+    const round = this.round;
+    if (!player.isHost || round === null || this.phase !== 'IN_ROUND') return null;
+    if (round.song.youtubeId === null) return null;
+    return {
+      kind: 'send',
+      to: player.id,
+      message: {
+        type: 'ROUND_CUE',
+        youtubeId: round.song.youtubeId,
+        startMs: round.song.clipStartMs,
+        playMs: round.song.clipEndMs - round.song.clipStartMs,
+      },
+    };
   }
 
   private handleRejoin(token: PlayerToken, now: number): Effect[] {
@@ -299,6 +325,8 @@ export class GameRoom {
         message: { type: 'PLAYER_CONNECTION_CHANGED', playerId: player.id, connected: true },
       });
     }
+    const cue = this.cueFor(player);
+    if (cue !== null) effects.push(cue);
     return effects;
   }
 
@@ -503,9 +531,10 @@ export class GameRoom {
     this.setTimer(deadline, 'DEADLINE');
 
     // Built by the one function allowed to decide what leaves the server
-    // before REVEAL. It cannot include the title, artist, or aliases.
+    // before REVEAL. It cannot include the title, artist, aliases, or the
+    // YouTube id.
     const payload = toRoundPublicPayload(song, index, this.songs.length);
-    return [
+    const effects: Effect[] = [
       {
         kind: 'broadcast',
         message: {
@@ -516,9 +545,20 @@ export class GameRoom {
           clipEndMs: payload.clipEndMs,
           serverStartedAt: now,
           deadline,
+          livePlayback: payload.livePlayback,
         },
       },
     ];
+
+    // The cue names the video, so it goes to the host and to nobody else. A
+    // host who has not joined as a player yet simply gets no cue — there is no
+    // socket to send it to, and inventing a broadcast fallback would leak it.
+    // They pick it up from `cueFor` as soon as they join.
+    const host = this.hostPlayerId === null ? undefined : this.players.get(this.hostPlayerId);
+    const cue = host === undefined ? null : this.cueFor(host);
+    if (cue !== null) effects.push(cue);
+
+    return effects;
   }
 
   // --- Leaderboard ---------------------------------------------------------
@@ -561,19 +601,24 @@ export class GameRoom {
 
   private buildRoomState(player: Player, now: number): ServerMessage {
     const round = this.round;
-    const roundState: RoundPublicState | undefined =
-      round === null || this.phase !== 'IN_ROUND'
-        ? undefined
-        : {
-            song: toRoundPublicPayload(round.song, round.index, this.songs.length).song,
-            mediaUrl: round.song.mediaUrl,
-            clipStartMs: round.song.clipStartMs,
-            clipEndMs: round.song.clipEndMs,
-            serverStartedAt: round.startedAt,
-            deadline: round.deadline,
-            paused: round.paused,
-            pausedAt: round.pausedAt,
-          };
+    let roundState: RoundPublicState | undefined;
+    if (round !== null && this.phase === 'IN_ROUND') {
+      // Everything about the song goes through the one redacting function,
+      // including on this path — reading `round.song` directly here is how a
+      // future field ends up leaking to a reconnecting player.
+      const payload = toRoundPublicPayload(round.song, round.index, this.songs.length);
+      roundState = {
+        song: payload.song,
+        mediaUrl: payload.mediaUrl,
+        clipStartMs: payload.clipStartMs,
+        clipEndMs: payload.clipEndMs,
+        serverStartedAt: round.startedAt,
+        deadline: round.deadline,
+        paused: round.paused,
+        pausedAt: round.pausedAt,
+        livePlayback: payload.livePlayback,
+      };
+    }
 
     void now;
     return {

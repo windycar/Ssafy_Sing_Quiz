@@ -16,6 +16,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CreateRoomOptions, GameServer, RoomCreation } from './index.ts';
 import type { StaticHandler } from './staticFiles.ts';
 import type { CatalogIssue, MediaRegistration } from '../shared/songCatalog.ts';
+import { identifySongFromVideo, oEmbedUrl, parseYouTubeLink } from '../shared/youtube.ts';
+import type { OEmbedResponse } from '../shared/youtube.ts';
 
 /** Refuses to hold more than this many rooms at once (memory is the limit). */
 export const MAX_ROOMS = 500;
@@ -96,9 +98,30 @@ function parseMediaRegistrations(raw: unknown): ParseResult<MediaRegistration[]>
   const out: MediaRegistration[] = [];
   for (const entry of raw) {
     if (!isPlainObject(entry)) return { ok: false, message: 'media 항목은 객체여야 합니다.' };
-    const { id, mediaUrl, clipStart, clipEnd } = entry;
+    const { id, mediaUrl, clipStart, clipEnd, youtubeId, youtubeStart } = entry;
 
     if (typeof id !== 'string' || id.length === 0) return { ok: false, message: 'media.id 가 필요합니다.' };
+
+    // A YouTube registration carries no URL and no clip range: the host plays
+    // the video in the room, so there is nothing for the server to serve.
+    if (youtubeId !== undefined) {
+      if (typeof youtubeId !== 'string' || parseYouTubeLink(youtubeId) === null) {
+        return { ok: false, message: `"${id}" 의 youtubeId 형식이 올바르지 않습니다.` };
+      }
+      if (
+        youtubeStart !== undefined &&
+        (typeof youtubeStart !== 'number' || !Number.isFinite(youtubeStart) || youtubeStart < 0)
+      ) {
+        return { ok: false, message: `"${id}" 의 youtubeStart 는 0 이상의 초 단위 숫자여야 합니다.` };
+      }
+      out.push({
+        id,
+        youtubeId: parseYouTubeLink(youtubeId)!.videoId,
+        ...(youtubeStart === undefined ? {} : { youtubeStart }),
+      });
+      continue;
+    }
+
     if (typeof mediaUrl !== 'string' || !isSafeMediaUrl(mediaUrl)) {
       return { ok: false, message: `"${id}" 의 mediaUrl 은 http/https 주소여야 합니다.` };
     }
@@ -114,6 +137,59 @@ function parseMediaRegistrations(raw: unknown): ParseResult<MediaRegistration[]>
     out.push({ id, mediaUrl, clipStart, clipEnd });
   }
   return { ok: true, value: out };
+}
+
+/** A slow or unreachable YouTube must not hold a host's request open. */
+const OEMBED_TIMEOUT_MS = 8_000;
+
+type VideoLookup =
+  | { ok: true; title: string; channel: string | null }
+  | { ok: false; message: string };
+
+/**
+ * Asks YouTube what a video is called.
+ *
+ * oEmbed is used because it needs no API key and no account. The request goes
+ * to a URL this process builds from an already-validated 11-character id, so a
+ * host cannot steer this fetch anywhere else — which is the only reason a
+ * server-side fetch of a user-supplied link is safe here.
+ */
+async function lookupVideo(videoId: string): Promise<VideoLookup> {
+  let response: Response;
+  try {
+    response = await fetch(oEmbedUrl(videoId), {
+      signal: AbortSignal.timeout(OEMBED_TIMEOUT_MS),
+      headers: { accept: 'application/json' },
+    });
+  } catch {
+    return { ok: false, message: '유튜브에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.' };
+  }
+
+  if (response.status === 401 || response.status === 403 || response.status === 404) {
+    return {
+      ok: false,
+      message: '비공개이거나 삭제된 영상입니다. 다른 링크를 사용해 주세요.',
+    };
+  }
+  if (!response.ok) {
+    return { ok: false, message: `유튜브가 응답하지 않았습니다 (HTTP ${response.status}).` };
+  }
+
+  let body: OEmbedResponse;
+  try {
+    body = (await response.json()) as OEmbedResponse;
+  } catch {
+    return { ok: false, message: '유튜브 응답을 이해하지 못했습니다.' };
+  }
+
+  const title = typeof body.title === 'string' ? body.title : '';
+  if (title === '') return { ok: false, message: '영상 제목을 읽지 못했습니다.' };
+
+  return {
+    ok: true,
+    title,
+    channel: typeof body.author_name === 'string' ? body.author_name : null,
+  };
 }
 
 export function parseCreateRoomRequest(raw: unknown): ParseResult<CreateRoomOptions> {
@@ -393,6 +469,60 @@ async function handleApi(
       return;
     }
     sendJson(response, 200, songSummary(configured, parsed.value));
+    return;
+  }
+
+  const youtubeMatch = /^\/api\/rooms\/([^/]+)\/youtube$/u.exec(pathname);
+  if (youtubeMatch !== null && request.method === 'POST') {
+    const room = authorizeRoom(request, response, game, decodeURIComponent(youtubeMatch[1] as string));
+    if (room === null) return;
+
+    const body = await readJsonBody(request);
+    if (!body.ok) {
+      sendJson(response, 400, { error: 'INVALID_BODY', message: body.message });
+      return;
+    }
+    const url = isPlainObject(body.value) ? body.value.url : undefined;
+    if (typeof url !== 'string') {
+      sendJson(response, 400, { error: 'INVALID_BODY', message: 'url 문자열이 필요합니다.' });
+      return;
+    }
+
+    const link = parseYouTubeLink(url);
+    if (link === null) {
+      sendJson(response, 400, {
+        error: 'NOT_A_YOUTUBE_LINK',
+        message: '유튜브 링크로 보이지 않습니다. 주소를 다시 확인해 주세요.',
+      });
+      return;
+    }
+
+    const lookup = await lookupVideo(link.videoId);
+    if (!lookup.ok) {
+      sendJson(response, 502, { error: 'YOUTUBE_LOOKUP_FAILED', message: lookup.message });
+      return;
+    }
+
+    // The catalog decides what the answer is. An uploader's title only points
+    // at a song; it never becomes one, or a host could smuggle in an answer
+    // the judging side has never seen.
+    const identified = identifySongFromVideo(lookup.title, lookup.channel, game.listSongs());
+
+    sendJson(response, 200, {
+      videoId: link.videoId,
+      startSeconds: link.startSeconds,
+      videoTitle: lookup.title,
+      channel: lookup.channel,
+      match:
+        identified === null
+          ? null
+          : {
+              id: identified.song.id,
+              title: identified.song.title,
+              artist: identified.song.artist,
+              artistConfirmed: identified.artistConfirmed,
+            },
+    });
     return;
   }
 

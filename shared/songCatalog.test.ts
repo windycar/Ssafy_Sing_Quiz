@@ -8,6 +8,7 @@ import {
   toRoundPublicPayload,
   MIN_CLIP_MS,
   MAX_CLIP_MS,
+  YOUTUBE_CLIP_MS,
 } from './songCatalog.ts';
 import type { RawSongRecord } from './songCatalog.ts';
 
@@ -169,6 +170,86 @@ test('toRoundPublicPayload never leaks the answer to clients', () => {
   assert.equal(payload.song.clipDurationMs, 10_000);
   assert.equal(payload.song.totalSongs, 20);
   assert.equal(payload.mediaUrl, 'https://example.invalid/clip-a1b2c3.mp3');
+  assert.equal(payload.livePlayback, false);
+});
+
+// --- YouTube songs, played by the host in the room ---------------------------
+
+test('a YouTube id makes a record playable with no media URL at all', () => {
+  const { playable, issues } = buildSongCatalog([
+    { id: 'yt-1', artist: '뉴진스', title: 'Hype boy', youtubeId: 'dQw4w9WgXcQ', youtubeStart: 45 },
+  ]);
+  assert.deepEqual(issues, []);
+  assert.equal(playable.length, 1);
+  assert.equal(playable[0]?.youtubeId, 'dQw4w9WgXcQ');
+  assert.equal(playable[0]?.mediaUrl, '');
+  assert.equal(playable[0]?.clipStartMs, 45_000);
+  // One minute of round: this window plus the 10 s answer grace.
+  assert.equal(playable[0]!.clipEndMs - playable[0]!.clipStartMs, YOUTUBE_CLIP_MS);
+});
+
+test('a YouTube song with no start time begins at the beginning', () => {
+  const { playable } = buildSongCatalog([
+    { id: 'yt-1', artist: '뉴진스', title: 'Hype boy', youtubeId: 'dQw4w9WgXcQ' },
+  ]);
+  assert.equal(playable[0]?.clipStartMs, 0);
+});
+
+test('the 5-15 second clip rule does not apply to a YouTube song', () => {
+  // The same 50 s window would be CLIP_TOO_LONG as a hosted audio clip.
+  const { issues } = buildSongCatalog([
+    { id: 'yt-1', artist: '뉴진스', title: 'Hype boy', youtubeId: 'dQw4w9WgXcQ' },
+  ]);
+  assert.deepEqual(issues, []);
+});
+
+test('a malformed YouTube id is refused rather than played', () => {
+  const { playable, issues } = buildSongCatalog([
+    { id: 'yt-1', artist: '뉴진스', title: 'Hype boy', youtubeId: 'not-an-id' },
+  ]);
+  assert.deepEqual(playable, []);
+  assert.equal(issues[0]?.code, 'INVALID_YOUTUBE_ID');
+});
+
+test('toRoundPublicPayload never leaks the YouTube id', () => {
+  // The video's own title names the song, so the id is as secret as the title.
+  const { playable } = buildSongCatalog([
+    { id: 'yt-1', artist: '뉴진스', title: 'Hype boy', youtubeId: 'dQw4w9WgXcQ' },
+  ]);
+  const payload = toRoundPublicPayload(playable[0]!, 0, 5);
+  const serialized = JSON.stringify(payload);
+  assert.equal(serialized.includes('dQw4w9WgXcQ'), false);
+  assert.equal(serialized.includes('Hype'), false);
+  assert.equal(payload.mediaUrl, '');
+  assert.equal(payload.livePlayback, true);
+});
+
+test('registering a YouTube link clears any audio clip on that song', () => {
+  // Otherwise the song would carry both and how it plays would depend on
+  // which branch buildSongCatalog happens to check first.
+  const applied = applyMediaRegistrations(
+    [playableRecord({ id: 'both' })],
+    [{ id: 'both', youtubeId: 'dQw4w9WgXcQ', youtubeStart: 12 }],
+  );
+  assert.equal(applied[0]?.mediaUrl, null);
+  assert.equal(applied[0]?.clipStart, null);
+  assert.equal(applied[0]?.youtubeId, 'dQw4w9WgXcQ');
+
+  const { playable } = buildSongCatalog(applied);
+  assert.equal(playable[0]?.youtubeId, 'dQw4w9WgXcQ');
+  assert.equal(playable[0]?.clipStartMs, 12_000);
+});
+
+test('registering an audio clip clears a YouTube link on that song', () => {
+  const applied = applyMediaRegistrations(
+    [{ id: 'yt', artist: 'a', title: 'b', youtubeId: 'dQw4w9WgXcQ' }],
+    [{ id: 'yt', mediaUrl: 'https://example.invalid/x.mp3', clipStart: 0, clipEnd: 10 }],
+  );
+  assert.equal(applied[0]?.youtubeId, null);
+
+  const { playable } = buildSongCatalog(applied);
+  assert.equal(playable[0]?.youtubeId, null);
+  assert.equal(playable[0]?.mediaUrl, 'https://example.invalid/x.mp3');
 });
 
 test('host media registration makes a recovered record playable', () => {

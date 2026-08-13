@@ -29,6 +29,7 @@ const roundStart: ServerMessage = {
   mediaUrl: 'https://media.invalid/clip',
   clipStartMs: 30_000,
   clipEndMs: 40_000,
+  livePlayback: false,
   serverStartedAt: 1_000,
   deadline: 21_000,
 };
@@ -163,6 +164,7 @@ test('a ROOM_STATE snapshot restores a round already in progress', () => {
         deadline: 21_000,
         paused: false,
         pausedAt: null,
+        livePlayback: false,
       },
     },
   ]);

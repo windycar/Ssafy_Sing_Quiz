@@ -53,6 +53,8 @@ export interface RoundPublicState {
   deadline: number;
   paused: boolean;
   pausedAt: number | null;
+  /** See `RoundStartMessage.livePlayback`. */
+  livePlayback: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +166,26 @@ export interface RoundStartMessage {
   clipEndMs: number;
   serverStartedAt: number;
   deadline: number;
+  /**
+   * True when the host is playing the song in the room. Every other client
+   * plays nothing — there is no `mediaUrl` for them to play.
+   */
+  livePlayback: boolean;
+}
+
+/**
+ * What to play, sent to the host alone.
+ *
+ * Separate from `ROUND_START` because a YouTube video's title names the song:
+ * broadcasting the id would broadcast the answer. This is the only message
+ * that carries it, and `GameRoom` addresses it to `hostPlayerId` only.
+ */
+export interface RoundCueMessage {
+  type: 'ROUND_CUE';
+  youtubeId: string;
+  startMs: number;
+  /** How long to play before the answer window closes. */
+  playMs: number;
 }
 
 export interface RoundPausedMessage {
@@ -239,6 +261,7 @@ export type ServerMessage =
   | PlayerReadyChangedMessage
   | CountdownStartedMessage
   | RoundStartMessage
+  | RoundCueMessage
   | RoundPausedMessage
   | RoundResumedMessage
   | AnswerAcceptedMessage

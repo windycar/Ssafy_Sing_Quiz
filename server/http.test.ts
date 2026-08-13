@@ -101,6 +101,41 @@ test('parseCreateRoomRequest rejects every malformed shape', () => {
   assert.equal(parseCreateRoomRequest(null).ok, true);
 });
 
+test('a YouTube registration needs no media URL and no clip range', () => {
+  const parsed = parseCreateRoomRequest({
+    media: [{ id: 'song-1', youtubeId: 'dQw4w9WgXcQ', youtubeStart: 45 }],
+  });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.ok ? parsed.value.media?.[0]?.youtubeId : null, 'dQw4w9WgXcQ');
+  assert.equal(parsed.ok ? parsed.value.media?.[0]?.youtubeStart : null, 45);
+});
+
+test('a pasted YouTube URL is reduced to its video id', () => {
+  // The host UI sends whatever was in the box; the id is what gets stored.
+  const parsed = parseCreateRoomRequest({
+    media: [{ id: 'song-1', youtubeId: 'https://youtu.be/dQw4w9WgXcQ?t=90' }],
+  });
+  assert.equal(parsed.ok ? parsed.value.media?.[0]?.youtubeId : null, 'dQw4w9WgXcQ');
+});
+
+test('a YouTube registration with a junk id is refused', () => {
+  // Note "not-a-video" is absent on purpose: it is 11 characters of the video
+  // id alphabet, so it is a well-formed id. Only YouTube can say whether an
+  // id exists, and that check belongs to the lookup route, not to parsing.
+  const rejected: unknown[] = [
+    { media: [{ id: 'a', youtubeId: 'too-short' }] },
+    { media: [{ id: 'a', youtubeId: 'way-too-long-for-an-id' }] },
+    { media: [{ id: 'a', youtubeId: 'has spaces' }] },
+    { media: [{ id: 'a', youtubeId: 'https://vimeo.com/12345' }] },
+    { media: [{ id: 'a', youtubeId: 42 }] },
+    { media: [{ id: 'a', youtubeId: 'dQw4w9WgXcQ', youtubeStart: -5 }] },
+    { media: [{ id: 'a', youtubeId: 'dQw4w9WgXcQ', youtubeStart: 'soon' }] },
+  ];
+  for (const body of rejected) {
+    assert.equal(parseCreateRoomRequest(body).ok, false, `should have rejected ${JSON.stringify(body)}`);
+  }
+});
+
 test('createRateLimiter allows a burst up to the limit and then refuses', () => {
   const allow = createRateLimiter({ limit: 3, windowMs: 1_000 });
   assert.deepEqual(

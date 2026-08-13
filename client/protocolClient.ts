@@ -73,6 +73,14 @@ export interface RoundView {
   deadline: number;
   paused: boolean;
   pausedAt: number | null;
+  /** The host plays this one in the room; nobody else plays anything. */
+  livePlayback: boolean;
+  /**
+   * What to play, and only ever set on the host's own client — the server
+   * sends `ROUND_CUE` to the host alone. A player's copy stays null, which is
+   * why a UI can read it without checking who it is rendering for.
+   */
+  cue: { youtubeId: string; startMs: number; playMs: number } | null;
 }
 
 export interface RevealView {
@@ -176,6 +184,10 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
               deadline: message.round.deadline,
               paused: message.round.paused,
               pausedAt: message.round.pausedAt,
+              livePlayback: message.round.livePlayback,
+              // A host reconnecting mid-round gets its ROUND_CUE right after
+              // this snapshot; a player never gets one.
+              cue: state.round?.cue ?? null,
             };
       return {
         ...state,
@@ -235,11 +247,27 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
           deadline: message.deadline,
           paused: false,
           pausedAt: null,
+          livePlayback: message.livePlayback,
+          // ROUND_CUE arrives separately, and only for the host.
+          cue: null,
         },
         reveal: null,
         answerFeedback: { kind: 'none' },
         answeredThisRound: false,
       };
+
+    case 'ROUND_CUE':
+      // Ignored when no round is open: a cue without its ROUND_START would
+      // point at a video the client has no deadline for.
+      return state.round === null
+        ? state
+        : {
+            ...state,
+            round: {
+              ...state.round,
+              cue: { youtubeId: message.youtubeId, startMs: message.startMs, playMs: message.playMs },
+            },
+          };
 
     case 'ROUND_PAUSED':
       return {

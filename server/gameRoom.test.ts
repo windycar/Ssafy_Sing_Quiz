@@ -12,7 +12,7 @@ import {
 } from './gameRoom.ts';
 import type { Effect, ServerMessage, PlayerId } from './protocol.ts';
 import { parseClientMessage } from './protocol.ts';
-import { buildSongCatalog } from '../shared/songCatalog.ts';
+import { buildSongCatalog, YOUTUBE_CLIP_MS } from '../shared/songCatalog.ts';
 import type { SongConfig } from '../shared/songCatalog.ts';
 
 // --- Test helpers -----------------------------------------------------------
@@ -610,4 +610,98 @@ test('messages from a connection that never joined are refused', () => {
   const room = newRoom();
   const effects = room.handleMessage({ type: 'SET_READY', ready: true }, null, 1_000);
   assert.equal(errorReasonOf(effects), 'NOT_JOINED');
+});
+
+// --- YouTube rounds, played by the host in the room --------------------------
+
+const YOUTUBE_SONGS: SongConfig[] = buildSongCatalog([
+  { id: 'y1', artist: '뉴진스', title: 'Hype boy', youtubeId: 'dQw4w9WgXcQ', youtubeStart: 45 },
+  { id: 'y2', artist: '아이유', title: '좋은 날', youtubeId: 'oHg5SJYRHA0' },
+]).playable;
+
+function youtubeRoom(now = 1_000): GameRoom {
+  return new GameRoom({ songs: YOUTUBE_SONGS, now });
+}
+
+test('a YouTube round lasts exactly one minute', () => {
+  // YOUTUBE_CLIP_MS and ANSWER_GRACE_MS live in different modules because
+  // shared/ must not import server/. This is the assertion that keeps the two
+  // in step; if it fails, one of them moved.
+  assert.equal(YOUTUBE_CLIP_MS + ANSWER_GRACE_MS, 60_000);
+
+  const room = youtubeRoom();
+  join(room, '방장', 1_000);
+  const effects = startFirstRound(room, 2_000);
+  const start = firstOfType(broadcasts(effects), 'ROUND_START');
+  assert.ok(start);
+  assert.equal(start.deadline - start.serverStartedAt, 60_000);
+});
+
+test('the YouTube id reaches the host and nobody else', () => {
+  const room = youtubeRoom();
+  const host = join(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_100);
+  const effects = startFirstRound(room, 2_000);
+
+  // The broadcast every player sees must not name the video at all.
+  const start = firstOfType(broadcasts(effects), 'ROUND_START');
+  assert.ok(start);
+  assert.equal(start.livePlayback, true);
+  assert.equal(start.mediaUrl, '');
+  assert.equal(JSON.stringify(broadcasts(effects)).includes('dQw4w9WgXcQ'), false);
+
+  const toHost = firstOfType(privateMessagesFor(effects, host.id), 'ROUND_CUE');
+  assert.ok(toHost, 'the host needs to know what to play');
+  assert.equal(toHost.youtubeId, 'dQw4w9WgXcQ');
+  assert.equal(toHost.startMs, 45_000);
+  assert.equal(toHost.playMs, YOUTUBE_CLIP_MS);
+
+  assert.equal(
+    firstOfType(privateMessagesFor(effects, guest.id), 'ROUND_CUE'),
+    undefined,
+    'a player who learns the video id has been handed the answer',
+  );
+});
+
+test('a host who refreshes mid-round gets the cue back', () => {
+  const room = youtubeRoom();
+  const host = join(room, '방장', 1_000);
+  startFirstRound(room, 2_000);
+
+  const effects = room.handleMessage(
+    { type: 'REJOIN', roomId: room.roomId, playerToken: host.token },
+    null,
+    3_000,
+  );
+  const cue = firstOfType(privateMessagesFor(effects, host.id), 'ROUND_CUE');
+  assert.ok(cue, 'otherwise the host has a running timer and no video');
+  assert.equal(cue.youtubeId, 'dQw4w9WgXcQ');
+});
+
+test('a player who refreshes mid-round still gets no cue', () => {
+  const room = youtubeRoom();
+  join(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_100);
+  startFirstRound(room, 2_000);
+
+  const effects = room.handleMessage(
+    { type: 'REJOIN', roomId: room.roomId, playerToken: guest.token },
+    null,
+    3_000,
+  );
+  assert.equal(firstOfType(privateMessagesFor(effects, guest.id), 'ROUND_CUE'), undefined);
+  assert.equal(JSON.stringify(effects).includes('dQw4w9WgXcQ'), false);
+});
+
+test('a YouTube round is judged and revealed like any other', () => {
+  const room = youtubeRoom();
+  join(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_100);
+  startFirstRound(room, 2_000);
+
+  const effects = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'hype boy' }, guest.id, 5_000);
+  assert.ok(firstOfType(privateMessagesFor(effects, guest.id), 'ANSWER_ACCEPTED'));
+  const reveal = firstOfType(broadcasts(effects), 'ROUND_REVEAL');
+  assert.ok(reveal);
+  assert.equal(reveal.song.title, 'Hype boy');
 });

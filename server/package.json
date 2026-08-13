@@ -1,0 +1,14 @@
+{
+  "name": "@song-quiz/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Authoritative in-memory game server for the song-guessing game. Dependency-free: the room engine is a pure state machine and the WebSocket transport is implemented against node:http.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "main": "index.ts",
+  "scripts": {
+    "test": "node --test *.test.ts"
+  }
+}

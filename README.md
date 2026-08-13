@@ -13,9 +13,10 @@
 
 | 구성 요소 | 위치 | 상태 |
 | --- | --- | --- |
-| 실시간 프로토콜 설계 (WebSocket 메시지, 상태 전이) | [`docs/realtime-protocol.md`](docs/realtime-protocol.md) | 설계 완료, 서버 미구현 |
+| 실시간 프로토콜 설계 (WebSocket 메시지, 상태 전이) | [`docs/realtime-protocol.md`](docs/realtime-protocol.md) | 설계 완료 |
 | 아키텍처 분석 (권위 서버, 재접속, 보안) | [`docs/claude-analysis.md`](docs/claude-analysis.md) | 설계 완료 |
-| 정답 정규화 · 별칭 매칭 · 곡 카탈로그 검증 | [`shared/answerMatching.ts`](shared/answerMatching.ts), [`shared/songCatalog.ts`](shared/songCatalog.ts) | 구현 및 테스트 완료, 실제 서버에는 아직 연결 안 됨 |
+| **권위 게임 서버 (WebSocket)** | [`server/`](server) | **구현 및 테스트 완료(54개). UI에는 아직 연결 안 됨** |
+| 정답 정규화 · 별칭 매칭 · 곡 카탈로그 검증 | [`shared/answerMatching.ts`](shared/answerMatching.ts), [`shared/songCatalog.ts`](shared/songCatalog.ts) | 구현 및 테스트 완료. 서버가 사용 중 |
 | 두 브랜치를 합치는 순서와 충돌 목록 | [`docs/integration-plan.md`](docs/integration-plan.md) | 문서 완료, 실행은 대기 중 |
 | UI/게임 루프 프로토타입 (`music-quiz/`) | `agent/codex` 브랜치 (`.worktrees/codex/music-quiz`) | 단일 브라우저 데모, 서버 없음 |
 
@@ -67,9 +68,10 @@ npm.cmd run dev
 | 구분 | 내용 |
 | --- | --- |
 | **구현됨** | 대기실·게임·결과 화면 이동, 출제 곡 수 설정, 0.1초 단위 로컬 타이머, 일시정지/스킵(내 화면 한정), 첫 번째 곡에 한정된 정답 입력·정규화 판정, 예시 데이터 기반 순위표·시상대 |
-| **구현됨 (재사용 가능 모듈)** | 정답 정규화/별칭 매칭(`shared/answerMatching.ts`), 곡 카탈로그 검증·별칭 자동 확장(`shared/songCatalog.ts`) — 아직 서버나 UI에 연결되지 않은 독립 모듈 |
-| **설계만 완료, 미구현** | 권위 서버(WebSocket), 방 생성/참여/닉네임, 방장 토큰 기반 권한 검사, 서버 기준 선착순 판정, 재접속 시 상태 복구 |
-| **완전 미구현** | 실제 음원 재생(라이선스 확보 포함), 여러 사용자 간 실시간 동기화, 새로고침 후 이어하기 |
+| **구현됨 (재사용 가능 모듈)** | 정답 정규화/별칭 매칭(`shared/answerMatching.ts`), 곡 카탈로그 검증·별칭 자동 확장(`shared/songCatalog.ts`) |
+| **구현됨 (서버, UI 미연결)** | 권위 WebSocket 서버(`server/`): 방 상태 기계와 페이즈 전이, 서버 수신 시각 기준 선착순 판정, 방장 토큰 권한 검사, 오답 비공개, 정답 미노출, 일시정지 시간 보존, 세션 토큰 재접속, 순위 계산, Origin 검증, 라운드당 제출 제한 |
+| **미구현** | 방을 만드는 HTTP API(현재는 서버 코드에서 `createRoom()` 호출로만 생성), UI와 서버 연결, 새로고침 후 이어하기의 클라이언트 쪽 처리 |
+| **완전 미구현** | 실제 음원 재생(라이선스 확보 포함), 방 상태 영속화, 방 생성·참여 요청 빈도 제한 |
 
 기능별 상세 표는 [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) §5,
 서버로 확장하는 구체적 순서는 [`docs/integration-plan.md`](docs/integration-plan.md)

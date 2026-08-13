@@ -189,10 +189,14 @@ Each step is independently reviewable and leaves `main` in a coherent state.
    workspace so `music-quiz` can import `@song-quiz/shared`; delete
    `normalizeAnswer` / `isCorrectAnswer` from `page.tsx`. This closes §1.1
    and is the first step that must not be skipped or deferred.
-4. **Build the authoritative server** against `realtime-protocol.md` §4,
-   using `buildSongCatalog` at room creation and `createSongMatcher` per
-   round. Room state is one in-memory object per room, per
-   `claude-analysis.md` §2.
+4. ~~**Build the authoritative server**~~ — **done**, in `server/` on this
+   branch. `gameRoom.ts` is a transport-free state machine implementing
+   `realtime-protocol.md` §4; `websocket.ts` is a dependency-free RFC 6455
+   transport; `index.ts` wires them and owns the timers. It uses
+   `buildSongCatalog` at construction and `createSongMatcher` per round, and
+   holds one in-memory state object per room per `claude-analysis.md` §2.
+   Still missing: an HTTP route for creating a room, so a browser host cannot
+   yet obtain a `roomId`/`hostToken` pair.
 5. **Convert the client to a protocol client.** Replace local state
    transitions with server messages; remove client-side judging, the
    hardcoded reveal, and the client-owned timer (§1.2, §1.4). Split answer

@@ -48,6 +48,31 @@ cd shared
 npm.cmd test   # node --test *.test.ts — answerMatching, songCatalog 테스트
 ```
 
+권위 게임 서버(`server/`)도 같은 방식으로 의존성 없이 돌아갑니다.
+
+```powershell
+cd server
+npm.cmd test   # node --test *.test.ts — 엔진 단위 테스트 + 실제 소켓 종단 테스트
+```
+
+`server/`는 `node:http` 위에 RFC 6455 핸드셰이크와 프레이밍을 직접 구현합니다.
+WebSocket 라이브러리를 받지 않는 이유는 `shared/`와 같습니다 — 설치 단계 없이
+`node --test`만으로 검증할 수 있게 하기 위해서입니다. 서버를 코드에서 띄울 때는
+다음과 같이 씁니다.
+
+```ts
+const running = startServer({ port: 8080, songs, allowedOrigins: ['https://…'] });
+const room = running.game.createRoom(); // roomId(참여 코드)와 hostToken을 돌려줍니다
+await running.stop();                   // 타이머 정리 + 소켓 드레이닝
+```
+
+타입 검사는 워크트리 루트의 `tsconfig.json`으로 `shared/`와 `server/`를 함께
+확인합니다.
+
+```powershell
+npx tsc --noEmit -p .
+```
+
 의존성이 없으므로 `shared`에서는 `npm.cmd install`이 필요하지 않습니다. 현재
 테스트는 27개(`answerMatching` 11개, `songCatalog` 16개)이며 모두 통과해야 합니다.
 Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 미만에서는 문법
@@ -60,12 +85,9 @@ Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 �
 > `npm.cmd run build`가 모듈을 찾지 못하고 실패합니다. 통합 전에 `.gitignore`
 > 예외를 추가하거나 플러그인 의존을 제거해야 합니다.
 
-`shared`에는 아직 `tsconfig.json`이 없습니다. 타입 검사가 필요하면 엄격 모드
-옵션을 직접 지정해 실행합니다.
-
-```powershell
-npx tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --allowImportingTsExtensions shared\*.ts
-```
+타입 검사 설정은 워크트리 루트 `tsconfig.json` 하나로 통일되어 있습니다
+(`strict`, `noUnusedLocals`, `noImplicitOverride` 등). 산출물을 만들지 않고
+검사만 수행합니다.
 
 ## 3. 디렉터리 구조
 

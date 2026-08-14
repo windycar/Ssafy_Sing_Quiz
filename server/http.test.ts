@@ -27,9 +27,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  *
  * `QUESTIONS_PER_TEXT_GAME` on a clean checkout, and that is what these
  * assertions are about. It is read from the live bank rather than hardcoded
- * because a host running the suite may have a shorter `속담.json` of their own
- * in the project root — the server drawing all of it is correct behaviour, not
- * a regression in the HTTP layer these tests cover.
+ * because a host running the suite may have a shorter `문제/속담.json` of their
+ * own — the server drawing all of it is correct behaviour, not a regression in
+ * the HTTP layer these tests cover.
  */
 function drawnQuestions(mode: GameMode): number {
   return Math.min(textBankFor(mode)?.length ?? 0, QUESTIONS_PER_TEXT_GAME);
@@ -299,7 +299,7 @@ test('parseCreateRoomRequest accepts the three modes and refuses anything else',
 test('creating a room in each mode records that mode and draws its questions', async () => {
   await withServer(async ({ base, game }) => {
     for (const mode of ['song', 'proverb', 'idiom'] as const) {
-      // A text mode is skipped only when someone's own file in the project root
+      // A text mode is skipped only when someone's own file under 문제/
       // will not load, leaving that bank empty. This test is about the route,
       // and there is nothing to create a room from.
       if (mode !== 'song' && drawnQuestions(mode) === 0) continue;

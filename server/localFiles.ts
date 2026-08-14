@@ -4,15 +4,19 @@
  * The song list, the proverbs, and the idioms are content, not code. Asking
  * someone to find them under `data/` — next to a recovered song catalog, two
  * `.50.json` archives and a handoff note — is asking them to edit the wrong
- * file at some point. So each one has a plain Korean name sitting in the
- * project root, beside the launcher, and that copy wins whenever it exists.
+ * file at some point. So all three sit together in a `문제/` folder next to the
+ * launcher, under plain Korean names, and those copies win whenever they exist.
  *
- * Nothing here is required: with no root file the server falls back to what the
- * repository ships, which is what a fresh clone and every test does. That is
- * also why the root copies are gitignored — they are one host's setlist for one
- * event, not a change to the project.
+ * A folder rather than three loose files in the project root: the root already
+ * holds a dozen source directories, and the point of this is that there is one
+ * obvious place to open and nothing else in it to get wrong.
  *
- * `resolveLocalFiles` takes the root directory rather than reading it from
+ * Nothing here is required: with no `문제/` folder the server falls back to what
+ * the repository ships, which is what a fresh clone and every test does. That is
+ * also why the folder is gitignored — it is one host's setlist for one event,
+ * not a change to the project.
+ *
+ * `resolveLocalFile` takes the root directory rather than reading it from
  * `import.meta.url`, so a test can point it at a temporary folder.
  */
 
@@ -22,6 +26,9 @@ import { fileURLToPath } from 'node:url';
 
 /** The project root: the folder holding `server/`, `data/` and the launcher. */
 export const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/** The one folder a host opens. Relative to `PROJECT_ROOT`. */
+export const EDITABLE_DIR = '문제';
 
 export interface ResolvedFile {
   /** Absolute path to the file the server should read. */
@@ -46,30 +53,33 @@ export interface LocalFileSpec {
   /** For messages. e.g. `곡 목록`. */
   label: string;
   /**
-   * Accepted names in the project root, most preferred first. The Korean name
-   * is what the documentation and the launcher tell people to use; the ASCII
-   * one is there because a file copied off an older setup will have it.
+   * Accepted paths relative to the project root, most preferred first. The
+   * first is what the documentation and the launcher tell people to use and the
+   * one `prepare-files.ts` creates; anything after it is a location that used to
+   * work and should not silently stop.
    */
   rootNames: readonly string[];
-  /** Path relative to the project root, used when no root file exists. */
+  /** Path relative to the project root, used when no host file exists. */
   bundled: string;
 }
 
 export const PLAYLIST_FILE: LocalFileSpec = {
   label: '곡 목록',
-  rootNames: ['곡목록.txt', 'playlist.txt'],
+  // `playlist.txt` in the root is where the launcher looked before this folder
+  // existed. Someone's list is sitting there; it keeps working.
+  rootNames: [`${EDITABLE_DIR}/곡목록.txt`, 'playlist.txt'],
   bundled: 'data/playlist.top100.txt',
 };
 
 export const PROVERB_FILE: LocalFileSpec = {
   label: '속담 문제',
-  rootNames: ['속담.json', 'proverbs.json'],
+  rootNames: [`${EDITABLE_DIR}/속담.json`],
   bundled: 'data/proverbs.json',
 };
 
 export const IDIOM_FILE: LocalFileSpec = {
   label: '사자성어 문제',
-  rootNames: ['사자성어.json', 'idioms.json'],
+  rootNames: [`${EDITABLE_DIR}/사자성어.json`],
   bundled: 'data/idioms.json',
 };
 

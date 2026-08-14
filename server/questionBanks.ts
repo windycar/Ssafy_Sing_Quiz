@@ -1,9 +1,9 @@
 /**
  * The proverb and idiom question banks.
  *
- * Read from the host's own `속담.json` / `사자성어.json` in the project root
- * when those exist, and from the copies this repository ships under `data/`
- * when they do not. `server/localFiles.ts` owns that choice.
+ * Read from the host's own `문제/속담.json` / `문제/사자성어.json` when those
+ * exist, and from the copies this repository ships under `data/` when they do
+ * not. `server/localFiles.ts` owns that choice.
  *
  * Server-side only, and deliberately so. `shared/` is mounted at `/shared/` for
  * the reference client, so anything placed there is public; `data/` and

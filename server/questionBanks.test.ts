@@ -8,7 +8,7 @@
  *
  * Read through `bundledBank`, not through `PROVERB_BANK`/`IDIOM_BANK`. Those
  * two are whatever the machine will actually play, which on a host's own laptop
- * is their `속담.json` from the project root — and if that decided whether this
+ * is their `문제/속담.json` — and if that decided whether this
  * suite passes, a bad *shipped* bank would go unnoticed on exactly the machines
  * that edit these files most.
  */

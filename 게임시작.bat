@@ -5,7 +5,8 @@ setlocal
 rem Double-click launcher. This is the only file anyone needs to run.
 rem
 rem It prepares the three files a host edits - the song list, the proverbs and
-rem the idioms - in this folder, then starts the game on a public address.
+rem the idioms - in a folder beside this one, then starts the game on a public
+rem address. That folder is the only thing a host ever has to open.
 rem
 rem Everything in this script is ASCII on purpose: cmd.exe parses a batch file
 rem with the console code page, and non-ASCII bytes in the script itself
@@ -36,7 +37,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem Creates the editable files if they are missing. Never overwrites.
+rem Creates the editable folder and its files if they are missing. It never
+rem overwrites one that already exists, so a list edited an hour before an event
+rem survives every restart.
 node scripts\prepare-files.ts
 if errorlevel 1 (
   echo.

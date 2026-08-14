@@ -152,9 +152,9 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
 
   // No flags means "just start it", which is how the launcher runs. Fall back
-  // to the host's own 곡목록.txt in the project root, or to the bundled list
-  // when they have not written one. Naming a file explicitly still wins — the
-  // flags are what a developer testing one playlist uses.
+  // to the host's own 문제/곡목록.txt, or to the bundled list when they have not
+  // written one. Naming a file explicitly still wins — the flags are what a
+  // developer testing one playlist uses.
   if (options.songsPath === null && options.playlistPath === null) {
     const playlist = resolveLocalFile(PLAYLIST_FILE);
     options.playlistPath = playlist.path;

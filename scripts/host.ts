@@ -21,6 +21,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createServer as createProbeServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -111,14 +112,67 @@ function parsePort(argv: readonly string[]): number {
   const index = argv.indexOf('--port');
   if (index === -1) return 8787;
   const value = Number(argv[index + 1]);
-  return Number.isInteger(value) && value > 0 ? value : 8787;
+  return Number.isInteger(value) && value > 0 && value <= 65_535 ? value : 8787;
+}
+
+/** Removes an existing --port pair before appending the selected free port. */
+function withoutPort(argv: readonly string[]): string[] {
+  const result: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === '--port') {
+      index += 1;
+      continue;
+    }
+    result.push(argv[index]);
+  }
+  return result;
+}
+
+/** Probes the same wildcard address that the game server listens on. */
+export function portIsAvailable(port: number): Promise<boolean> {
+  return new Promise((resolvePromise) => {
+    const probe = createProbeServer();
+    probe.unref();
+    probe.once('error', () => resolvePromise(false));
+    probe.listen(port, () => {
+      probe.close(() => resolvePromise(true));
+    });
+  });
+}
+
+/**
+ * Finds a free local port before creating the public tunnel.
+ *
+ * Double-clicking the launcher twice used to create a tunnel and only then
+ * crash the second server with EADDRINUSE. Choosing the port first means both
+ * the tunnel and the server always agree on a usable endpoint.
+ */
+export async function findAvailablePort(preferred: number, attempts = 20): Promise<number> {
+  for (let offset = 0; offset < attempts; offset += 1) {
+    const candidate = preferred + offset;
+    if (candidate > 65_535) break;
+    if (await portIsAvailable(candidate)) return candidate;
+  }
+  throw new Error(`${preferred}번부터 사용 가능한 포트를 찾지 못했습니다. 열려 있는 게임 창을 닫고 다시 실행하세요.`);
 }
 
 async function main(): Promise<void> {
   // `--port` 만 읽고 나머지는 그대로 넘깁니다. 이 스크립트는 실행 방식만
   // 바꾸는 것이고, 곡을 고르는 규칙은 server/main.ts 하나에만 둡니다.
   const passthrough = process.argv.slice(2);
-  const port = parsePort(passthrough);
+  const preferredPort = parsePort(passthrough);
+  let port: number;
+  try {
+    port = await findAvailablePort(preferredPort);
+  } catch (error) {
+    console.error(`\n${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+    return;
+  }
+  if (port !== preferredPort) {
+    console.log(`${preferredPort}번 포트가 이미 사용 중이어서 ${port}번 포트로 시작합니다.`);
+  }
+  const serverArgs = withoutPort(passthrough);
 
   // 곡 목록을 지정하지 않으면 server/main.ts 가 프로젝트 루트의 곡목록.txt 를
   // 찾아 씁니다. 어느 파일을 쓸지 정하는 규칙은 그 파일 한 곳에만 둡니다.
@@ -137,7 +191,7 @@ async function main(): Promise<void> {
 
   const server = spawn(
     process.execPath,
-    [MAIN, ...passthrough, '--port', String(port), '--origin', publicUrl],
+    [MAIN, ...serverArgs, '--port', String(port), '--origin', publicUrl],
     { stdio: 'inherit' },
   );
 
@@ -182,4 +236,7 @@ async function main(): Promise<void> {
   });
 }
 
-void main();
+// Importing this file from a unit test must not start a real tunnel.
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  void main();
+}

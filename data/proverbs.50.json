@@ -1,0 +1,460 @@
+{
+  "_comment": [
+    "속담 맞히기 50문항 문제 은행.",
+    "prefix만 문제로 공개하고 full/suffix/aliases는 정답 공개 전 서버에만 보관합니다.",
+    "정답은 전체 속담과 suffix를 기본 인정하며 aliases는 널리 쓰이는 변형 표기입니다.",
+    "난이도 구성: easy 20, medium 20, hard 10. 문제 순서는 게임 시작 때 섞습니다."
+  ],
+  "proverbs": [
+    {
+      "id": "pv-001",
+      "full": "가는 말이 고와야 오는 말이 곱다",
+      "prefix": "가는 말이 고와야",
+      "suffix": "오는 말이 곱다",
+      "aliases": ["오는 말도 곱다"],
+      "difficulty": "easy",
+      "explanation": "내가 남에게 좋게 말하고 행동해야 상대도 나를 좋게 대한다."
+    },
+    {
+      "id": "pv-002",
+      "full": "낮말은 새가 듣고 밤말은 쥐가 듣는다",
+      "prefix": "낮말은 새가 듣고",
+      "suffix": "밤말은 쥐가 듣는다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "아무리 비밀스럽게 한 말도 결국 남의 귀에 들어갈 수 있으니 조심해야 한다."
+    },
+    {
+      "id": "pv-003",
+      "full": "티끌 모아 태산",
+      "prefix": "티끌 모아",
+      "suffix": "태산",
+      "aliases": ["태산이 된다"],
+      "difficulty": "easy",
+      "explanation": "아주 작은 것도 꾸준히 모으면 큰 결과가 된다."
+    },
+    {
+      "id": "pv-004",
+      "full": "원숭이도 나무에서 떨어진다",
+      "prefix": "원숭이도",
+      "suffix": "나무에서 떨어진다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "아무리 능숙한 사람도 실수할 때가 있다."
+    },
+    {
+      "id": "pv-005",
+      "full": "세 살 버릇 여든까지 간다",
+      "prefix": "세 살 버릇",
+      "suffix": "여든까지 간다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "어릴 때 생긴 버릇은 늙어서도 고치기 어렵다."
+    },
+    {
+      "id": "pv-006",
+      "full": "소 잃고 외양간 고친다",
+      "prefix": "소 잃고",
+      "suffix": "외양간 고친다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "일이 잘못된 뒤에야 뒤늦게 대비하는 어리석음을 이른다."
+    },
+    {
+      "id": "pv-007",
+      "full": "발 없는 말이 천 리 간다",
+      "prefix": "발 없는 말이",
+      "suffix": "천 리 간다",
+      "aliases": ["천리 간다"],
+      "difficulty": "easy",
+      "explanation": "말은 매우 빠르게 퍼지므로 말조심해야 한다."
+    },
+    {
+      "id": "pv-008",
+      "full": "백지장도 맞들면 낫다",
+      "prefix": "백지장도",
+      "suffix": "맞들면 낫다",
+      "aliases": ["맞들면 가볍다"],
+      "difficulty": "easy",
+      "explanation": "쉬운 일도 서로 힘을 합치면 더 수월하다."
+    },
+    {
+      "id": "pv-009",
+      "full": "아니 땐 굴뚝에 연기 날까",
+      "prefix": "아니 땐 굴뚝에",
+      "suffix": "연기 날까",
+      "aliases": ["연기 나랴"],
+      "difficulty": "medium",
+      "explanation": "어떤 소문이나 결과에는 대개 원인이 있기 마련이다."
+    },
+    {
+      "id": "pv-010",
+      "full": "배보다 배꼽이 더 크다",
+      "prefix": "배보다",
+      "suffix": "배꼽이 더 크다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "주된 것보다 부수적인 것이 더 크거나 비용이 더 많이 든다."
+    },
+    {
+      "id": "pv-011",
+      "full": "호랑이도 제 말 하면 온다",
+      "prefix": "호랑이도",
+      "suffix": "제 말 하면 온다",
+      "aliases": ["제 말 하면 온다더니"],
+      "difficulty": "hard",
+      "explanation": "어떤 사람 이야기를 하는데 마침 그 사람이 나타날 때 쓰는 말이다."
+    },
+    {
+      "id": "pv-012",
+      "full": "가재는 게 편이다",
+      "prefix": "가재는",
+      "suffix": "게 편이다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "모양이나 처지가 비슷한 사람끼리 서로 편을 든다."
+    },
+    {
+      "id": "pv-013",
+      "full": "개천에서 용 난다",
+      "prefix": "개천에서",
+      "suffix": "용 난다",
+      "aliases": ["용이 난다"],
+      "difficulty": "easy",
+      "explanation": "변변하지 못한 환경에서도 훌륭한 인물이 나올 수 있다."
+    },
+    {
+      "id": "pv-014",
+      "full": "열 번 찍어 아니 넘어가는 나무 없다",
+      "prefix": "열 번 찍어",
+      "suffix": "아니 넘어가는 나무 없다",
+      "aliases": ["안 넘어가는 나무 없다"],
+      "difficulty": "medium",
+      "explanation": "끈기 있게 계속 노력하면 결국 뜻을 이룰 수 있다."
+    },
+    {
+      "id": "pv-015",
+      "full": "낫 놓고 기역 자도 모른다",
+      "prefix": "낫 놓고",
+      "suffix": "기역 자도 모른다",
+      "aliases": ["ㄱ자도 모른다", "기역자도 모른다"],
+      "difficulty": "medium",
+      "explanation": "아주 무식하여 쉬운 글자조차 모르는 사람을 이른다."
+    },
+    {
+      "id": "pv-016",
+      "full": "미운 놈 떡 하나 더 준다",
+      "prefix": "미운 놈",
+      "suffix": "떡 하나 더 준다",
+      "aliases": ["떡 하나 더 준다더니"],
+      "difficulty": "medium",
+      "explanation": "미운 사람일수록 겉으로 더 잘 대해 감정을 드러내지 않는다는 말이다."
+    },
+    {
+      "id": "pv-017",
+      "full": "빈 수레가 요란하다",
+      "prefix": "빈 수레가",
+      "suffix": "요란하다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "실속 없는 사람이 오히려 더 떠들고 잘난 체한다."
+    },
+    {
+      "id": "pv-018",
+      "full": "서당 개 삼 년이면 풍월을 읊는다",
+      "prefix": "서당 개 삼 년이면",
+      "suffix": "풍월을 읊는다",
+      "aliases": ["풍월을 한다"],
+      "difficulty": "medium",
+      "explanation": "어떤 환경에 오래 있으면 자연스럽게 그 일에 대한 지식이 생긴다."
+    },
+    {
+      "id": "pv-019",
+      "full": "싼 게 비지떡",
+      "prefix": "싼 게",
+      "suffix": "비지떡",
+      "aliases": [],
+      "difficulty": "hard",
+      "explanation": "값이 싼 물건은 대체로 품질도 좋지 않다는 말이다."
+    },
+    {
+      "id": "pv-020",
+      "full": "열 길 물속은 알아도 한 길 사람 속은 모른다",
+      "prefix": "열 길 물속은 알아도",
+      "suffix": "한 길 사람 속은 모른다",
+      "aliases": ["한길 사람 속은 모른다"],
+      "difficulty": "hard",
+      "explanation": "겉으로 보이는 것과 달리 사람의 속마음은 알기 어렵다."
+    },
+    {
+      "id": "pv-021",
+      "full": "윗물이 맑아야 아랫물이 맑다",
+      "prefix": "윗물이 맑아야",
+      "suffix": "아랫물이 맑다",
+      "aliases": [],
+      "difficulty": "medium",
+      "explanation": "윗사람이 바르게 행동해야 아랫사람도 바르게 행동한다."
+    },
+    {
+      "id": "pv-022",
+      "full": "지렁이도 밟으면 꿈틀한다",
+      "prefix": "지렁이도",
+      "suffix": "밟으면 꿈틀한다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "아무리 약한 사람도 지나치게 괴롭히면 반항한다."
+    },
+    {
+      "id": "pv-023",
+      "full": "하늘의 별 따기",
+      "prefix": "하늘의",
+      "suffix": "별 따기",
+      "aliases": ["별을 따기"],
+      "difficulty": "hard",
+      "explanation": "무엇을 이루거나 얻기가 매우 어렵다는 뜻이다."
+    },
+    {
+      "id": "pv-024",
+      "full": "하룻강아지 범 무서운 줄 모른다",
+      "prefix": "하룻강아지",
+      "suffix": "범 무서운 줄 모른다",
+      "aliases": ["호랑이 무서운 줄 모른다"],
+      "difficulty": "medium",
+      "explanation": "철없이 겁 없이 덤비는 사람을 이른다."
+    },
+    {
+      "id": "pv-025",
+      "full": "콩 심은 데 콩 나고 팥 심은 데 팥 난다",
+      "prefix": "콩 심은 데 콩 나고",
+      "suffix": "팥 심은 데 팥 난다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "모든 결과에는 그에 맞는 원인이 있다."
+    },
+    {
+      "id": "pv-026",
+      "full": "남의 떡이 커 보인다",
+      "prefix": "남의 떡이",
+      "suffix": "커 보인다",
+      "aliases": ["더 커 보인다"],
+      "difficulty": "easy",
+      "explanation": "자기 것보다 남의 것이 더 좋아 보이기 쉽다."
+    },
+    {
+      "id": "pv-027",
+      "full": "돌다리도 두들겨 보고 건너라",
+      "prefix": "돌다리도",
+      "suffix": "두들겨 보고 건너라",
+      "aliases": ["두드려 보고 건너라"],
+      "difficulty": "easy",
+      "explanation": "잘 아는 일도 확인하며 조심해서 해야 한다."
+    },
+    {
+      "id": "pv-028",
+      "full": "우물 안 개구리",
+      "prefix": "우물 안",
+      "suffix": "개구리",
+      "aliases": [],
+      "difficulty": "hard",
+      "explanation": "경험과 시야가 좁아 넓은 세상을 모르는 사람을 이른다."
+    },
+    {
+      "id": "pv-029",
+      "full": "믿는 도끼에 발등 찍힌다",
+      "prefix": "믿는 도끼에",
+      "suffix": "발등 찍힌다",
+      "aliases": ["발등을 찍힌다"],
+      "difficulty": "medium",
+      "explanation": "믿었던 사람에게 배신당하거나 기대가 어긋난다."
+    },
+    {
+      "id": "pv-030",
+      "full": "고래 싸움에 새우 등 터진다",
+      "prefix": "고래 싸움에",
+      "suffix": "새우 등 터진다",
+      "aliases": ["새우등 터진다"],
+      "difficulty": "easy",
+      "explanation": "강한 사람들의 다툼 때문에 약한 사람이 피해를 본다."
+    },
+    {
+      "id": "pv-031",
+      "full": "등잔 밑이 어둡다",
+      "prefix": "등잔 밑이",
+      "suffix": "어둡다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "가까이에 있는 것을 오히려 알아차리지 못하기 쉽다."
+    },
+    {
+      "id": "pv-032",
+      "full": "시작이 반이다",
+      "prefix": "시작이",
+      "suffix": "반이다",
+      "aliases": [],
+      "difficulty": "easy",
+      "explanation": "무슨 일이든 시작하기가 어렵고, 일단 시작하면 절반은 이룬 셈이다."
+    },
+    {
+      "id": "pv-033",
+      "full": "꿩 대신 닭",
+      "prefix": "꿩 대신",
+      "suffix": "닭",
+      "aliases": [],
+      "difficulty": "medium",
+      "explanation": "적당한 것이 없을 때 비슷한 다른 것으로 대신한다."
+    },
+    {
+      "id": "pv-034",
+      "full": "고생 끝에 낙이 온다",
+      "prefix": "고생 끝에",
+      "suffix": "낙이 온다",
+      "aliases": ["즐거움이 온다"],
+      "difficulty": "easy",
+      "explanation": "어려움을 견디고 나면 좋은 일이 찾아온다."
+    },
+    {
+      "id": "pv-035",
+      "full": "금강산도 식후경",
+      "prefix": "금강산도",
+      "suffix": "식후경",
+      "aliases": [],
+      "difficulty": "medium",
+      "explanation": "아무리 좋은 일도 배를 채운 뒤에야 제대로 즐길 수 있다."
+    },
+    {
+      "id": "pv-036",
+      "full": "누워서 침 뱉기",
+      "prefix": "누워서",
+      "suffix": "침 뱉기",
+      "aliases": ["침을 뱉기"],
+      "difficulty": "medium",
+      "explanation": "남을 해치려 한 일이 결국 자기에게 해가 되어 돌아온다."
+    },
+    {
+      "id": "pv-037",
+      "full": "닭 쫓던 개 지붕 쳐다보듯",
+      "prefix": "닭 쫓던 개",
+      "suffix": "지붕 쳐다보듯",
+      "aliases": ["지붕만 쳐다본다", "지붕 쳐다본다"],
+      "difficulty": "hard",
+      "explanation": "애써 하던 일이 실패하여 어찌할 도리가 없어진 모습을 이른다."
+    },
+    {
+      "id": "pv-038",
+      "full": "도토리 키 재기",
+      "prefix": "도토리",
+      "suffix": "키 재기",
+      "aliases": [],
+      "difficulty": "medium",
+      "explanation": "서로 비슷비슷하여 우열을 가리기 어려운 사람끼리 비교한다."
+    },
+    {
+      "id": "pv-039",
+      "full": "말 한마디에 천 냥 빚도 갚는다",
+      "prefix": "말 한마디에",
+      "suffix": "천 냥 빚도 갚는다",
+      "aliases": ["천냥 빚도 갚는다"],
+      "difficulty": "medium",
+      "explanation": "말을 잘하면 큰 어려움도 해결할 수 있다."
+    },
+    {
+      "id": "pv-040",
+      "full": "모로 가도 서울만 가면 된다",
+      "prefix": "모로 가도",
+      "suffix": "서울만 가면 된다",
+      "aliases": [],
+      "difficulty": "hard",
+      "explanation": "방법이 어떻든 목적만 이루면 된다는 뜻이다."
+    },
+    {
+      "id": "pv-041",
+      "full": "벼는 익을수록 고개를 숙인다",
+      "prefix": "벼는 익을수록",
+      "suffix": "고개를 숙인다",
+      "aliases": ["고개를 숙인다더니"],
+      "difficulty": "medium",
+      "explanation": "교양 있고 성숙한 사람일수록 겸손하다."
+    },
+    {
+      "id": "pv-042",
+      "full": "사공이 많으면 배가 산으로 간다",
+      "prefix": "사공이 많으면",
+      "suffix": "배가 산으로 간다",
+      "aliases": [],
+      "difficulty": "medium",
+      "explanation": "지시하는 사람이 너무 많으면 일이 엉뚱한 방향으로 흐른다."
+    },
+    {
+      "id": "pv-043",
+      "full": "작은 고추가 맵다",
+      "prefix": "작은 고추가",
+      "suffix": "맵다",
+      "aliases": [],
+      "difficulty": "medium",
+      "explanation": "몸집이 작아도 재주나 힘이 뛰어날 수 있다."
+    },
+    {
+      "id": "pv-044",
+      "full": "천 리 길도 한 걸음부터",
+      "prefix": "천 리 길도",
+      "suffix": "한 걸음부터",
+      "aliases": ["첫걸음부터"],
+      "difficulty": "medium",
+      "explanation": "아무리 큰일도 작은 시작에서 출발한다."
+    },
+    {
+      "id": "pv-045",
+      "full": "하나를 보면 열을 안다",
+      "prefix": "하나를 보면",
+      "suffix": "열을 안다",
+      "aliases": [],
+      "difficulty": "medium",
+      "explanation": "일부만 보고도 전체를 미루어 짐작할 수 있다."
+    },
+    {
+      "id": "pv-046",
+      "full": "웃는 얼굴에 침 못 뱉는다",
+      "prefix": "웃는 얼굴에",
+      "suffix": "침 못 뱉는다",
+      "aliases": ["침을 못 뱉는다"],
+      "difficulty": "medium",
+      "explanation": "좋은 태도로 대하는 사람에게는 함부로 나쁘게 대하기 어렵다."
+    },
+    {
+      "id": "pv-047",
+      "full": "급할수록 돌아가라",
+      "prefix": "급할수록",
+      "suffix": "돌아가라",
+      "aliases": [],
+      "difficulty": "medium",
+      "explanation": "급한 때일수록 서두르지 말고 차분하고 안전하게 처리해야 한다."
+    },
+    {
+      "id": "pv-048",
+      "full": "그림의 떡",
+      "prefix": "그림의",
+      "suffix": "떡",
+      "aliases": [],
+      "difficulty": "hard",
+      "explanation": "마음에 들어도 실제로 이용하거나 가질 수 없는 것을 이른다."
+    },
+    {
+      "id": "pv-049",
+      "full": "구슬이 서 말이라도 꿰어야 보배",
+      "prefix": "구슬이 서 말이라도",
+      "suffix": "꿰어야 보배",
+      "aliases": ["꿰어야 보배다"],
+      "difficulty": "hard",
+      "explanation": "좋은 재료나 능력도 잘 다듬고 활용해야 가치가 생긴다."
+    },
+    {
+      "id": "pv-050",
+      "full": "될성부른 나무는 떡잎부터 알아본다",
+      "prefix": "될성부른 나무는",
+      "suffix": "떡잎부터 알아본다",
+      "aliases": ["떡잎부터 안다"],
+      "difficulty": "hard",
+      "explanation": "크게 될 사람은 어릴 때부터 남다른 점이 드러난다."
+    }
+  ]
+}

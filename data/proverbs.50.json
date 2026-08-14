@@ -3,7 +3,7 @@
     "속담 맞히기 50문항 문제 은행.",
     "prefix만 문제로 공개하고 full/suffix/aliases는 정답 공개 전 서버에만 보관합니다.",
     "정답은 전체 속담과 suffix를 기본 인정하며 aliases는 널리 쓰이는 변형 표기입니다.",
-    "난이도 구성: easy 20, medium 20, hard 10. 게임마다 전체를 섞어 30문항만 중복 없이 뽑습니다."
+    "난이도 구성: 50문항 모두 medium. 게임마다 전체를 섞어 30문항만 중복 없이 뽑습니다."
   ],
   "proverbs": [
     {
@@ -12,7 +12,7 @@
       "prefix": "가는 말이 고와야",
       "suffix": "오는 말이 곱다",
       "aliases": ["오는 말도 곱다"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "내가 남에게 좋게 말하고 행동해야 상대도 나를 좋게 대한다."
     },
     {
@@ -21,7 +21,7 @@
       "prefix": "낮말은 새가 듣고",
       "suffix": "밤말은 쥐가 듣는다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "아무리 비밀스럽게 한 말도 결국 남의 귀에 들어갈 수 있으니 조심해야 한다."
     },
     {
@@ -30,7 +30,7 @@
       "prefix": "티끌 모아",
       "suffix": "태산",
       "aliases": ["태산이 된다"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "아주 작은 것도 꾸준히 모으면 큰 결과가 된다."
     },
     {
@@ -39,7 +39,7 @@
       "prefix": "원숭이도",
       "suffix": "나무에서 떨어진다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "아무리 능숙한 사람도 실수할 때가 있다."
     },
     {
@@ -48,7 +48,7 @@
       "prefix": "세 살 버릇",
       "suffix": "여든까지 간다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "어릴 때 생긴 버릇은 늙어서도 고치기 어렵다."
     },
     {
@@ -57,7 +57,7 @@
       "prefix": "소 잃고",
       "suffix": "외양간 고친다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "일이 잘못된 뒤에야 뒤늦게 대비하는 어리석음을 이른다."
     },
     {
@@ -66,7 +66,7 @@
       "prefix": "발 없는 말이",
       "suffix": "천 리 간다",
       "aliases": ["천리 간다"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "말은 매우 빠르게 퍼지므로 말조심해야 한다."
     },
     {
@@ -75,7 +75,7 @@
       "prefix": "백지장도",
       "suffix": "맞들면 낫다",
       "aliases": ["맞들면 가볍다"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "쉬운 일도 서로 힘을 합치면 더 수월하다."
     },
     {
@@ -93,7 +93,7 @@
       "prefix": "배보다",
       "suffix": "배꼽이 더 크다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "주된 것보다 부수적인 것이 더 크거나 비용이 더 많이 든다."
     },
     {
@@ -102,7 +102,7 @@
       "prefix": "호랑이도",
       "suffix": "제 말 하면 온다",
       "aliases": ["제 말 하면 온다더니"],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "어떤 사람 이야기를 하는데 마침 그 사람이 나타날 때 쓰는 말이다."
     },
     {
@@ -111,7 +111,7 @@
       "prefix": "가재는",
       "suffix": "게 편이다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "모양이나 처지가 비슷한 사람끼리 서로 편을 든다."
     },
     {
@@ -120,7 +120,7 @@
       "prefix": "개천에서",
       "suffix": "용 난다",
       "aliases": ["용이 난다"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "변변하지 못한 환경에서도 훌륭한 인물이 나올 수 있다."
     },
     {
@@ -156,7 +156,7 @@
       "prefix": "빈 수레가",
       "suffix": "요란하다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "실속 없는 사람이 오히려 더 떠들고 잘난 체한다."
     },
     {
@@ -174,7 +174,7 @@
       "prefix": "싼 게",
       "suffix": "비지떡",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "값이 싼 물건은 대체로 품질도 좋지 않다는 말이다."
     },
     {
@@ -183,7 +183,7 @@
       "prefix": "열 길 물속은 알아도",
       "suffix": "한 길 사람 속은 모른다",
       "aliases": ["한길 사람 속은 모른다"],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "겉으로 보이는 것과 달리 사람의 속마음은 알기 어렵다."
     },
     {
@@ -201,7 +201,7 @@
       "prefix": "지렁이도",
       "suffix": "밟으면 꿈틀한다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "아무리 약한 사람도 지나치게 괴롭히면 반항한다."
     },
     {
@@ -210,7 +210,7 @@
       "prefix": "하늘의",
       "suffix": "별 따기",
       "aliases": ["별을 따기"],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "무엇을 이루거나 얻기가 매우 어렵다는 뜻이다."
     },
     {
@@ -228,7 +228,7 @@
       "prefix": "콩 심은 데 콩 나고",
       "suffix": "팥 심은 데 팥 난다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "모든 결과에는 그에 맞는 원인이 있다."
     },
     {
@@ -237,7 +237,7 @@
       "prefix": "남의 떡이",
       "suffix": "커 보인다",
       "aliases": ["더 커 보인다"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "자기 것보다 남의 것이 더 좋아 보이기 쉽다."
     },
     {
@@ -246,7 +246,7 @@
       "prefix": "돌다리도",
       "suffix": "두들겨 보고 건너라",
       "aliases": ["두드려 보고 건너라"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "잘 아는 일도 확인하며 조심해서 해야 한다."
     },
     {
@@ -255,7 +255,7 @@
       "prefix": "우물 안",
       "suffix": "개구리",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "경험과 시야가 좁아 넓은 세상을 모르는 사람을 이른다."
     },
     {
@@ -273,7 +273,7 @@
       "prefix": "고래 싸움에",
       "suffix": "새우 등 터진다",
       "aliases": ["새우등 터진다"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "강한 사람들의 다툼 때문에 약한 사람이 피해를 본다."
     },
     {
@@ -282,7 +282,7 @@
       "prefix": "등잔 밑이",
       "suffix": "어둡다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "가까이에 있는 것을 오히려 알아차리지 못하기 쉽다."
     },
     {
@@ -291,7 +291,7 @@
       "prefix": "시작이",
       "suffix": "반이다",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "무슨 일이든 시작하기가 어렵고, 일단 시작하면 절반은 이룬 셈이다."
     },
     {
@@ -309,7 +309,7 @@
       "prefix": "고생 끝에",
       "suffix": "낙이 온다",
       "aliases": ["즐거움이 온다"],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "어려움을 견디고 나면 좋은 일이 찾아온다."
     },
     {
@@ -336,7 +336,7 @@
       "prefix": "닭 쫓던 개",
       "suffix": "지붕 쳐다보듯",
       "aliases": ["지붕만 쳐다본다", "지붕 쳐다본다"],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "애써 하던 일이 실패하여 어찌할 도리가 없어진 모습을 이른다."
     },
     {
@@ -363,7 +363,7 @@
       "prefix": "모로 가도",
       "suffix": "서울만 가면 된다",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "방법이 어떻든 목적만 이루면 된다는 뜻이다."
     },
     {
@@ -435,7 +435,7 @@
       "prefix": "그림의",
       "suffix": "떡",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "마음에 들어도 실제로 이용하거나 가질 수 없는 것을 이른다."
     },
     {
@@ -444,7 +444,7 @@
       "prefix": "구슬이 서 말이라도",
       "suffix": "꿰어야 보배",
       "aliases": ["꿰어야 보배다"],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "좋은 재료나 능력도 잘 다듬고 활용해야 가치가 생긴다."
     },
     {
@@ -453,7 +453,7 @@
       "prefix": "될성부른 나무는",
       "suffix": "떡잎부터 알아본다",
       "aliases": ["떡잎부터 안다"],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "크게 될 사람은 어릴 때부터 남다른 점이 드러난다."
     }
   ]

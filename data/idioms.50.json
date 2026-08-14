@@ -3,7 +3,7 @@
     "사자성어 맞히기 50문항 문제 은행.",
     "meaning만 문제로 공개하고 answer/hanja/aliases는 정답 공개 전 서버에만 보관합니다.",
     "한글 독음과 한자 네 글자를 기본 정답으로 인정합니다.",
-    "난이도 구성: easy 20, medium 20, hard 10. 게임마다 전체를 섞어 30문항만 중복 없이 뽑습니다."
+    "난이도 구성: 50문항 모두 medium. 게임마다 전체를 섞어 30문항만 중복 없이 뽑습니다."
   ],
   "idioms": [
     {
@@ -12,7 +12,7 @@
       "hanja": "刻舟求劍",
       "meaning": "상황이 달라졌는데도 낡은 방법만 고집하는 어리석음",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "배에서 칼을 떨어뜨린 자리를 배에 새겨 두고 나중에 그 자리에서 칼을 찾았다는 이야기에서 유래했다."
     },
     {
@@ -30,7 +30,7 @@
       "hanja": "結草報恩",
       "meaning": "죽은 뒤에라도 잊지 않고 은혜를 갚음",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "풀을 묶어 은인을 도왔다는 고사에서 나온 말로, 깊은 은혜에 반드시 보답함을 뜻한다."
     },
     {
@@ -39,7 +39,7 @@
       "hanja": "苦盡甘來",
       "meaning": "힘든 시기가 지나면 좋은 날이 찾아옴",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "쓴 것이 다하면 단 것이 온다는 뜻이다."
     },
     {
@@ -48,7 +48,7 @@
       "hanja": "過猶不及",
       "meaning": "지나친 것은 모자란 것만큼 좋지 않음",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "무엇이든 알맞은 정도를 지키는 것이 중요하다는 말이다."
     },
     {
@@ -66,7 +66,7 @@
       "hanja": "九死一生",
       "meaning": "여러 차례 죽을 고비를 넘기고 간신히 살아남",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "매우 위험한 상황에서 겨우 목숨을 건졌음을 뜻한다."
     },
     {
@@ -84,7 +84,7 @@
       "hanja": "錦上添花",
       "meaning": "좋은 일에 또 좋은 일이 더해짐",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "아름다운 비단 위에 꽃을 더한다는 뜻이다."
     },
     {
@@ -93,7 +93,7 @@
       "hanja": "囊中之錐",
       "meaning": "뛰어난 재능은 숨어 있어도 저절로 드러남",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "주머니 속의 송곳은 끝이 밖으로 드러난다는 데서 나온 말이다."
     },
     {
@@ -102,7 +102,7 @@
       "hanja": "多多益善",
       "meaning": "수가 많으면 많을수록 더욱 좋음",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "양이 많을수록 유리하거나 좋을 때 쓰는 말이다."
     },
     {
@@ -111,7 +111,7 @@
       "hanja": "大器晩成",
       "meaning": "큰 인물은 오랜 노력 끝에 늦게 이루어짐",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "큰 그릇은 만드는 데 오래 걸린다는 뜻이다."
     },
     {
@@ -147,7 +147,7 @@
       "hanja": "半信半疑",
       "meaning": "한편으로는 믿으면서 다른 한편으로는 의심함",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "믿음과 의심이 반반인 상태를 가리킨다."
     },
     {
@@ -156,7 +156,7 @@
       "hanja": "百年偕老",
       "meaning": "부부가 오래도록 사이좋게 함께 늙어감",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "결혼을 축하하며 부부의 긴 행복을 기원할 때 자주 쓴다."
     },
     {
@@ -165,7 +165,7 @@
       "hanja": "四面楚歌",
       "meaning": "사방이 적에게 둘러싸여 도움받을 곳이 없는 외로운 처지",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "초나라 군대가 사방에서 초나라 노래를 듣고 고립을 깨달은 고사에서 유래했다."
     },
     {
@@ -183,7 +183,7 @@
       "hanja": "雪上加霜",
       "meaning": "어려운 일이 끝나기도 전에 또 다른 어려움이 겹침",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "눈 위에 서리가 더해진다는 뜻이다."
     },
     {
@@ -201,7 +201,7 @@
       "hanja": "十匙一飯",
       "meaning": "여럿이 조금씩 힘을 모으면 한 사람을 충분히 도울 수 있음",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "열 사람이 한 숟가락씩 보태면 한 사람의 밥 한 그릇이 된다는 뜻이다."
     },
     {
@@ -237,7 +237,7 @@
       "hanja": "優柔不斷",
       "meaning": "망설이기만 하고 결정을 내리지 못함",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "태도가 지나치게 부드럽고 약해 결단성이 없는 모습을 가리킨다."
     },
     {
@@ -246,7 +246,7 @@
       "hanja": "一石二鳥",
       "meaning": "한 가지 일을 하여 두 가지 이익을 동시에 얻음",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "돌 하나를 던져 새 두 마리를 잡는다는 뜻이다."
     },
     {
@@ -255,7 +255,7 @@
       "hanja": "自業自得",
       "meaning": "자기가 한 일의 결과를 자기 스스로 받음",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "대개 잘못된 행동의 나쁜 결과가 자신에게 돌아왔을 때 쓴다."
     },
     {
@@ -264,7 +264,7 @@
       "hanja": "轉禍爲福",
       "meaning": "닥친 재앙이나 어려움이 오히려 좋은 결과로 바뀜",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "화를 바꾸어 복으로 만든다는 뜻이다."
     },
     {
@@ -282,7 +282,7 @@
       "hanja": "有備無患",
       "meaning": "미리 준비해 두면 걱정하거나 어려움을 당할 일이 없음",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "충분한 대비가 사고와 문제를 막아 준다는 뜻이다."
     },
     {
@@ -300,7 +300,7 @@
       "hanja": "作心三日",
       "meaning": "굳게 먹은 마음이 오래가지 못하고 금세 흐지부지됨",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "결심이 사흘을 넘기기 어렵다는 뜻으로 꾸준하지 못한 태도를 이른다."
     },
     {
@@ -309,7 +309,7 @@
       "hanja": "東問西答",
       "meaning": "묻는 말과 전혀 관계없는 엉뚱한 대답을 함",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "동쪽을 물었는데 서쪽을 답한다는 뜻이다."
     },
     {
@@ -318,7 +318,7 @@
       "hanja": "莫上莫下",
       "meaning": "둘 사이의 실력이나 수준이 비슷하여 우열을 가리기 어려움",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "누가 위이고 아래인지 정하기 어려울 만큼 비슷한 상태이다."
     },
     {
@@ -327,7 +327,7 @@
       "hanja": "龍頭蛇尾",
       "meaning": "처음은 거창하지만 끝으로 갈수록 흐지부지하고 보잘것없음",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "머리는 용처럼 크지만 꼬리는 뱀처럼 가늘다는 뜻이다."
     },
     {
@@ -345,7 +345,7 @@
       "hanja": "以心傳心",
       "meaning": "말하지 않아도 서로 마음이 통하여 뜻을 알아차림",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "마음에서 마음으로 뜻을 전한다는 말이다."
     },
     {
@@ -390,7 +390,7 @@
       "hanja": "破竹之勢",
       "meaning": "거침없이 나아가 막을 수 없을 만큼 강한 기세",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "대나무를 쪼개면 처음 몇 마디 뒤에는 저절로 갈라지는 형세를 비유한다."
     },
     {
@@ -399,7 +399,7 @@
       "hanja": "狐假虎威",
       "meaning": "남의 권세를 빌려 자기 힘인 것처럼 뽐내고 위세를 부림",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "여우가 호랑이의 위세를 빌려 다른 짐승들을 겁주었다는 이야기에서 유래했다."
     },
     {
@@ -408,7 +408,7 @@
       "hanja": "無用之物",
       "meaning": "아무 쓸모가 없는 물건이나 사람",
       "aliases": [],
-      "difficulty": "easy",
+      "difficulty": "medium",
       "explanation": "사용할 곳이나 가치가 전혀 없는 대상을 이른다."
     },
     {
@@ -417,7 +417,7 @@
       "hanja": "門前成市",
       "meaning": "찾아오는 사람이 매우 많아 문 앞이 시장처럼 붐빔",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "장사가 잘되거나 명성이 높아 방문객이 끊이지 않을 때 쓴다."
     },
     {
@@ -435,7 +435,7 @@
       "hanja": "附和雷同",
       "meaning": "자기 생각 없이 남의 의견이나 행동을 그대로 따라감",
       "aliases": [],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "뚜렷한 주관 없이 주변의 분위기에 휩쓸리는 모습을 가리킨다."
     },
     {
@@ -444,7 +444,7 @@
       "hanja": "脣亡齒寒",
       "meaning": "서로 밀접한 관계라서 한쪽이 망하면 다른 쪽도 위험해짐",
       "aliases": ["唇亡齒寒"],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "explanation": "입술이 없으면 이가 시리다는 뜻으로 서로 의지하는 관계를 이른다."
     },
     {

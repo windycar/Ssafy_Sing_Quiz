@@ -16,7 +16,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CreateRoomOptions, GameServer, RoomCreation } from './index.ts';
 import type { StaticHandler } from './staticFiles.ts';
 import type { CatalogIssue, MediaRegistration } from '../shared/songCatalog.ts';
-import { GAME_MODES, isGameMode } from '../shared/questions.ts';
+import { GAME_MODES, isGameMode, TEXT_BANK_SIZE } from '../shared/questions.ts';
+import type { GameMode } from '../shared/questions.ts';
 import { identifySongFromVideo, parseYouTubeLink } from '../shared/youtube.ts';
 import { lookupVideo } from './youtubeLookup.ts';
 
@@ -147,22 +148,40 @@ export function parseCreateRoomRequest(raw: unknown): ParseResult<CreateRoomOpti
 
   const options: CreateRoomOptions = {};
 
-  const { mode, songCount, songIds, shuffle, media } = raw;
+  const { counts, songIds, shuffle, media } = raw;
 
-  // Rejected rather than defaulted: a host who typed a mode this build does
-  // not have should be told, not quietly given the song game.
-  if (mode !== undefined) {
-    if (!isGameMode(mode)) {
-      return { ok: false, message: `mode 는 ${GAME_MODES.join(', ')} 중 하나여야 합니다.` };
-    }
-    options.mode = mode;
+  // Removed, and refused rather than ignored. A client still sending it was
+  // built when a room played one mode; silently handing it a three-section game
+  // would look like the mode picker had simply stopped working.
+  if ('mode' in raw) {
+    return {
+      ok: false,
+      message: 'mode 는 더 이상 쓰지 않습니다. 한 방이 노래·속담·사자성어를 순서대로 진행하며, counts 로 각 문제 수를 정합니다.',
+    };
+  }
+  if ('songCount' in raw) {
+    return { ok: false, message: 'songCount 대신 counts.song 을 쓰세요.' };
   }
 
-  if (songCount !== undefined) {
-    if (typeof songCount !== 'number' || !Number.isInteger(songCount) || songCount < 1 || songCount > MAX_SONGS_PER_GAME) {
-      return { ok: false, message: `songCount 는 1 이상 ${MAX_SONGS_PER_GAME} 이하의 정수여야 합니다.` };
+  // How many questions of each kind. There is no `mode`: a room plays all
+  // three in a fixed order, and the only thing a host chooses is how long each
+  // stretch is. Zero drops a section, which is the nearest thing to the old
+  // mode picker and is a deliberate choice rather than a default.
+  if (counts !== undefined) {
+    if (!isPlainObject(counts)) return { ok: false, message: 'counts 는 JSON 객체여야 합니다.' };
+
+    const parsed: Partial<Record<GameMode, number>> = {};
+    for (const [key, value] of Object.entries(counts)) {
+      if (!isGameMode(key)) {
+        return { ok: false, message: `counts 의 키는 ${GAME_MODES.join(', ')} 중 하나여야 합니다.` };
+      }
+      const limit = key === 'song' ? MAX_SONGS_PER_GAME : TEXT_BANK_SIZE;
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > limit) {
+        return { ok: false, message: `counts.${key} 는 0 이상 ${limit} 이하의 정수여야 합니다.` };
+      }
+      parsed[key] = value;
     }
-    options.songCount = songCount;
+    options.counts = parsed;
   }
 
   if (songIds !== undefined) {
@@ -497,9 +516,11 @@ async function handleApi(
     sendJson(response, 200, {
       roomId: room.roomId,
       phase: room.getPhase(),
-      // Safe to publish: which game is being played is not an answer to any of
-      // its questions, and a joining player needs it to know what to expect.
+      // Safe to publish: what a room is going to play is not an answer to any
+      // of its questions, and a joining player needs it to know what to expect.
       mode: room.getMode(),
+      sections: room.getSectionCounts(),
+      questionCount: room.getQuestionCount(),
       playerCount: game.connectedCount(roomId),
       joinable: room.getPhase() === 'LOBBY',
       ready: room.getQuestionCount() > 0,
@@ -514,7 +535,7 @@ async function handleApi(
 function songSummary(created: RoomCreation, options: CreateRoomOptions): Record<string, unknown> {
   const registered = new Set((options.media ?? []).map((entry) => entry.id));
   return {
-    mode: created.mode,
+    sections: created.sections,
     questionCount: created.questionCount,
     songCount: created.songCount,
     playableCount: created.catalog.playable.length,

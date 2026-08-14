@@ -19,9 +19,13 @@ import { createRequestHandler } from './http.ts';
 import { createStaticHandler } from './staticFiles.ts';
 import { applyMediaRegistrations, buildSongCatalog } from '../shared/songCatalog.ts';
 import type { MediaRegistration, RawSongRecord, SongCatalog, SongConfig } from '../shared/songCatalog.ts';
-import { songQuestions, QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
+import { songQuestions, QUESTIONS_PER_TEXT_GAME, SECTION_ORDER } from '../shared/questions.ts';
 import type { GameMode, Question } from '../shared/questions.ts';
 import { textBankFor } from './questionBanks.ts';
+
+// Re-exported so a caller that already imports the room registry does not need
+// a second import to know what order a game runs in.
+export { SECTION_ORDER };
 
 /** An abandoned room is collected once every player has been gone this long. */
 export const ROOM_IDLE_TTL_MS = 30 * 60_000;
@@ -33,12 +37,26 @@ interface Session {
   playerId: PlayerId | null;
 }
 
+/** How many questions each section contributes. */
+export type SectionCounts = Record<GameMode, number>;
+
+/**
+ * Everything, which is what a host who changes nothing gets.
+ *
+ * The song figure is `MAX_SONGS_PER_GAME` and the two text figures are
+ * `QUESTIONS_PER_TEXT_GAME`, so the default is "the whole song list, and a full
+ * round of each text bank". Every count is clamped to what is actually there,
+ * so a host with a 40-song list gets 40 rather than an error.
+ */
+export const DEFAULT_SECTION_COUNTS: SectionCounts = { song: 100, proverb: 30, idiom: 30 };
+
 export interface CreateRoomOptions {
-  /** What the room plays. Defaults to `song`, the original game. */
-  mode?: GameMode;
-  /** How many songs the game runs. Defaults to the whole selection. */
-  songCount?: number;
-  /** Restricts the draw to these song ids. Unknown ids are ignored. */
+  /**
+   * How many questions to draw per section. Missing entries take the default,
+   * and a section set to 0 is skipped — that is how a host drops one.
+   */
+  counts?: Partial<SectionCounts>;
+  /** Restricts the song draw to these ids. Unknown ids are ignored. */
   songIds?: readonly string[];
   /** Draw in random order. On by default — see `selectSongs`. */
   shuffle?: boolean;
@@ -47,15 +65,22 @@ export interface CreateRoomOptions {
   now?: number;
 }
 
+/** What one section contributed, after clamping to what was available. */
+export interface DrawnSection {
+  mode: GameMode;
+  count: number;
+}
+
 export interface RoomCreation {
   room: GameRoom;
-  mode: GameMode;
   /**
    * The song catalog this room was drawn from, including everything it
-   * rejected. Still reported in a text mode — the host screen shows it either
-   * way — but a text room draws none of its questions from it.
+   * rejected. The host screen shows it whatever the song count is, including
+   * zero — it is how a host finds out why a song they expected is missing.
    */
   catalog: SongCatalog;
+  /** What each section contributed, in playing order. */
+  sections: readonly DrawnSection[];
   /** How many questions the room will actually play. */
   questionCount: number;
   /** Superseded by `questionCount`; equal to it. */
@@ -73,10 +98,14 @@ export interface RoomCreation {
  * subject matter. `randomInt` rather than `Math.random` because the draw is a
  * fairness input, not a cosmetic one.
  */
-export function selectSongs(
-  playable: readonly SongConfig[],
-  options: Pick<CreateRoomOptions, 'songCount' | 'songIds' | 'shuffle'> = {},
-): SongConfig[] {
+export interface SelectSongsOptions {
+  /** How many to take, after filtering and shuffling. Undefined takes them all. */
+  songCount?: number;
+  songIds?: readonly string[];
+  shuffle?: boolean;
+}
+
+export function selectSongs(playable: readonly SongConfig[], options: SelectSongsOptions = {}): SongConfig[] {
   let pool = [...playable];
 
   if (options.songIds !== undefined) {
@@ -178,46 +207,64 @@ export class GameServer {
    * out of a fifty-question bank this repository ships, so it is never empty
    * and `songCount` does not apply to it.
    */
-  private draw(options: CreateRoomOptions): { mode: GameMode; catalog: SongCatalog; questions: Question[] } {
-    const mode = options.mode ?? 'song';
+  private draw(options: CreateRoomOptions): {
+    catalog: SongCatalog;
+    sections: DrawnSection[];
+    questions: Question[];
+  } {
     const catalog = this.buildCatalog(options.media ?? []);
+    const wanted = { ...DEFAULT_SECTION_COUNTS, ...options.counts };
 
-    const bank = textBankFor(mode);
-    if (bank !== null) {
-      return {
-        mode,
-        catalog,
-        questions: selectQuestions(bank, QUESTIONS_PER_TEXT_GAME, options.shuffle !== false),
-      };
+    // Built by walking SECTION_ORDER rather than by concatenating three named
+    // results, so the running order lives in exactly one place and adding a
+    // fourth kind of question later is a line in that array.
+    const sections: DrawnSection[] = [];
+    const questions: Question[] = [];
+
+    for (const mode of SECTION_ORDER) {
+      const count = Math.max(0, Math.trunc(wanted[mode]));
+      const drawn =
+        count === 0
+          ? []
+          : mode === 'song'
+            ? songQuestions(selectSongs(catalog.playable, { ...options, songCount: count }))
+            : selectQuestions(textBankFor(mode) ?? [], count, options.shuffle !== false);
+
+      // The count reported back is what was actually drawn, not what was asked
+      // for: a host who asks for 100 songs and has 40 needs the screen to say
+      // 40, and `selectQuestions`/`selectSongs` already clamp for us.
+      sections.push({ mode, count: drawn.length });
+      questions.push(...drawn);
     }
-    return { mode, catalog, questions: songQuestions(selectSongs(catalog.playable, options)) };
+
+    return { catalog, sections, questions };
   }
 
   createRoom(options: CreateRoomOptions = {}): RoomCreation {
     const now = options.now ?? Date.now();
-    const { mode, catalog, questions } = this.draw(options);
+    const { catalog, sections, questions } = this.draw(options);
 
-    const room = new GameRoom({ mode, questions, now });
+    const room = new GameRoom({ questions, now });
     this.rooms.set(room.roomId, room);
     this.touchedAt.set(room.roomId, now);
-    return { room, mode, catalog, questionCount: questions.length, songCount: questions.length };
+    return { room, catalog, sections, questionCount: questions.length, songCount: questions.length };
   }
 
   /**
-   * Re-draws an existing room's mode and questions.
+   * Re-draws an existing room's questions.
    *
    * Separate from creation because the song catalog is only readable with a
    * host token, and a host has no token until the room exists — so the host
-   * screen necessarily configures the room in a second step, and the mode is
-   * chosen on that same screen. Returns null when the room is past LOBBY and
-   * its setlist is therefore frozen.
+   * screen necessarily configures the room in a second step, and the per-section
+   * counts are set on that same screen. Returns null when the room is past
+   * LOBBY and its setlist is therefore frozen.
    */
   configureRoom(room: GameRoom, options: CreateRoomOptions = {}): RoomCreation | null {
-    const { mode, catalog, questions } = this.draw(options);
-    if (!room.setQuestions(mode, questions)) return null;
+    const { catalog, sections, questions } = this.draw(options);
+    if (!room.setQuestions(questions)) return null;
 
     this.touchedAt.set(room.roomId, options.now ?? Date.now());
-    return { room, mode, catalog, questionCount: questions.length, songCount: questions.length };
+    return { room, catalog, sections, questionCount: questions.length, songCount: questions.length };
   }
 
   getRoom(roomId: RoomId): GameRoom | undefined {

@@ -130,7 +130,7 @@ function closeRound(room: GameRoom, now: number): Effect[] {
 }
 
 function newRoom(now = 1_000): GameRoom {
-  return new GameRoom({ mode: 'song', questions: songQuestions(SONGS), now });
+  return new GameRoom({ questions: songQuestions(SONGS), now });
 }
 
 /**
@@ -145,8 +145,16 @@ function textGame(bank: readonly Question[]): Question[] {
   return selectQuestions(bank, QUESTIONS_PER_TEXT_GAME, false);
 }
 
+/**
+ * A room holding one text bank and nothing else.
+ *
+ * `mode` is not passed to the engine — a room has no mode, and each question
+ * carries its own — but it stays in the signature because the callers read as
+ * "a proverb room" and the bank alone would not say which.
+ */
 function textRoom(mode: GameMode, bank: readonly Question[], now = 1_000): GameRoom {
-  return new GameRoom({ mode, questions: textGame(bank), now });
+  void mode;
+  return new GameRoom({ questions: textGame(bank), now });
 }
 
 // --- Catalog sanity ---------------------------------------------------------
@@ -259,7 +267,7 @@ test('the room refuses a 21st player', () => {
 });
 
 test('the game cannot start with no playable songs', () => {
-  const room = new GameRoom({ mode: 'song', questions: [], now: 1_000 });
+  const room = new GameRoom({ questions: [], now: 1_000 });
   joinHost(room, '방장', 1_000);
   const effects = room.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 2_000);
   assert.equal(errorReasonOf(effects), 'NOT_ENOUGH_PLAYERS');
@@ -1199,7 +1207,7 @@ const YOUTUBE_SONGS: SongConfig[] = buildSongCatalog([
 ]).playable;
 
 function youtubeRoom(now = 1_000): GameRoom {
-  return new GameRoom({ mode: 'song', questions: songQuestions(YOUTUBE_SONGS), now });
+  return new GameRoom({ questions: songQuestions(YOUTUBE_SONGS), now });
 }
 
 test('a YouTube round lasts exactly one minute', () => {
@@ -1285,11 +1293,7 @@ test('a hundred-song game finishes, and scores exactly one point per answered ro
       youtubeId: String(i).padStart(11, 'a'),
     });
   }
-  const room = new GameRoom({
-    mode: 'song',
-    questions: songQuestions(buildSongCatalog(records).playable),
-    now: 1_000,
-  });
+  const room = new GameRoom({ questions: songQuestions(buildSongCatalog(records).playable), now: 1_000 });
   const players = [join(room, '하나', 1_000), join(room, '둘', 1_001), join(room, '셋', 1_002)];
 
   let clock = 2_000;
@@ -1583,7 +1587,7 @@ for (const [mode, bank] of [
 ] as const) {
   test(`a ${mode} game plays all ${QUESTIONS_PER_TEXT_GAME} questions once and then finishes`, () => {
     const questions = textGame(bank);
-    const room = new GameRoom({ mode, questions, now: 1_000 });
+    const room = new GameRoom({ questions, now: 1_000 });
     const players = [join(room, '하나', 1_000), join(room, '둘', 1_001), join(room, '셋', 1_002)];
 
     // Every fifth question goes unanswered, so both the three-scorer path and
@@ -1619,7 +1623,7 @@ for (const [mode, bank] of [
     // the clue tells them nothing about it. Only the answer to the question in
     // front of the player matters.
     const questions = textGame(bank);
-    const room = new GameRoom({ mode, questions, now: 1_000 });
+    const room = new GameRoom({ questions, now: 1_000 });
     const players = [join(room, '하나', 1_000), join(room, '둘', 1_001), join(room, '셋', 1_002)];
 
     /** Everything this question's answer must not appear in. */

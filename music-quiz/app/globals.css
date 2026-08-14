@@ -173,14 +173,13 @@ button:disabled { cursor: not-allowed; opacity: .46; }
   단서 카드는 노래 모드의 턴테이블과 같은 자리를 씁니다. 둘 중 하나만 화면에
   있고, 어느 쪽인지는 서버가 알려 준 모드가 정합니다.
 */
-.mode-select { border: 1px solid var(--line); margin: 12px 0 0; padding: 10px; display: grid; gap: 6px; }
-.mode-select legend { font: 900 8px Consolas, monospace; letter-spacing: 2px; padding: 0 6px; }
-.mode-select label { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "radio name" "radio hint"; gap: 0 8px; align-items: center; padding: 8px; border: 1px solid transparent; cursor: pointer; }
-.mode-select label:hover { border-color: var(--line); }
-.mode-select label:has(input:checked) { border-color: var(--ink); background: var(--white); }
-.mode-select input { grid-area: radio; accent-color: var(--violet); margin: 0; }
-.mode-select b { grid-area: name; font-size: 13px; }
-.mode-select small { grid-area: hint; color: var(--muted); font-size: 10px; }
+/* 게임 진행 순서. 고를 수 있는 컨트롤이 아니라 읽기 전용 목록입니다 — 순서는
+   고정이고, 방장이 정하는 것은 구간별 문제 수뿐입니다. */
+.section-plan { border: 1px solid var(--line); margin: 12px 0 0; padding: 10px; display: grid; gap: 6px; list-style: none; counter-reset: section; }
+.section-plan li { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "step name" "step hint"; gap: 0 10px; align-items: center; padding: 8px; }
+.section-plan li::before { counter-increment: section; content: counter(section); grid-area: step; align-self: start; background: var(--violet); color: white; font: 900 10px Consolas, monospace; width: 20px; height: 20px; display: grid; place-items: center; }
+.section-plan b { grid-area: name; font-size: 13px; }
+.section-plan small { grid-area: hint; color: var(--muted); font-size: 10px; }
 
 .mode-badge { display: inline-block; margin: 8px 0 0; padding: 5px 10px; background: var(--violet); color: var(--white); font: 800 10px Consolas, monospace; letter-spacing: 1px; }
 

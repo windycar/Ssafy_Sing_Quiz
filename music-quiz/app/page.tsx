@@ -29,17 +29,12 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { ProtocolClient } from "@song-quiz/client/protocolClient.ts";
 import type { ClientState } from "@song-quiz/client/protocolClient.ts";
 import { ApiError, createRoom, fetchCatalog, lookupRoom, setSetlist } from "@song-quiz/client/api.ts";
-import type { SongListEntry } from "@song-quiz/client/api.ts";
+import type { SectionSummary, SongListEntry } from "@song-quiz/client/api.ts";
+import { DEFAULT_SECTION_COUNTS, SECTION_ORDER } from "@song-quiz/server/index.ts";
 import type { MediaRegistration } from "@song-quiz/shared/songCatalog.ts";
 import type { ServerMessage } from "@song-quiz/server/protocol.ts";
 import { normalizeAnswer } from "@song-quiz/shared/answerMatching.ts";
-import {
-  GAME_MODES,
-  isTextMode,
-  MODE_LABEL,
-  MODE_PROMPT,
-  QUESTIONS_PER_TEXT_GAME,
-} from "@song-quiz/shared/questions.ts";
+import { isTextMode, MODE_LABEL, MODE_PROMPT } from "@song-quiz/shared/questions.ts";
 import type { GameMode } from "@song-quiz/shared/questions.ts";
 import { apiBase, hostKey, readStorage, sessionKey, socketUrl, writeStorage } from "./gameServer";
 
@@ -52,12 +47,26 @@ const AVATAR = (nickname: string): string => nickname.trim().slice(0, 1) || "?";
 /** Only as many places as the server actually scores. */
 const ORDINAL: Record<number, string> = { 1: "1st", 2: "2nd", 3: "3rd" };
 
-/** One line of copy per mode, on the mode selector. */
+/** One line of copy per section, on the running order shown before a room exists. */
 const MODE_HINT: Record<GameMode, string> = {
   song: "하이라이트를 듣고 곡 제목을 맞힙니다.",
-  proverb: `속담의 앞부분을 보고 뒷부분을 맞힙니다. ${QUESTIONS_PER_TEXT_GAME}문제.`,
-  idiom: `뜻풀이를 보고 사자성어를 맞힙니다. ${QUESTIONS_PER_TEXT_GAME}문제.`,
+  proverb: "속담의 앞부분을 보고 뒷부분을 맞힙니다.",
+  idiom: "뜻풀이를 보고 사자성어를 맞힙니다.",
 };
+
+/**
+ * "노래 100 · 속담 30 · 사자성어 30 — 총 160문제" — the plan, in playing order.
+ *
+ * Sections the room will not play are dropped rather than shown as zero: a game
+ * with no songs in it is a game of proverbs and idioms, and saying "노래 0"
+ * invites the reader to wonder what went wrong.
+ */
+function describeSections(sections: readonly SectionSummary[], questionCount: number): string {
+  const played = sections.filter((section) => section.count > 0);
+  if (played.length === 0) return "출제할 문제가 없습니다.";
+  const parts = played.map((section) => `${MODE_LABEL[section.mode]} ${section.count}`);
+  return `${parts.join(" · ")} — 총 ${questionCount}문제`;
+}
 
 const ANSWER_PLACEHOLDER: Record<GameMode, string> = {
   song: "노래 제목을 입력하세요",
@@ -101,20 +110,20 @@ export default function Home() {
   // Host setup
   const [roomId, setRoomId] = useState<string | null>(null);
   const [hostToken, setHostToken] = useState<string | null>(null);
-  /** The mode picked on the home screen, before a room exists. */
-  const [pickedMode, setPickedMode] = useState<GameMode>("song");
   /**
-   * The mode the server recorded on the room being set up.
+   * How many questions the host wants from each section.
    *
-   * Only the host screen needs it, and only before anyone has joined. Once
-   * there is a session the mode arrives with every `ROOM_STATE`, and this file
-   * never decides what game is being played.
+   * Only the setup screen needs it, and only before anyone has joined. What was
+   * actually drawn comes back from the server and is written straight back in
+   * here — 100 songs from a 40-song list is 40, and the box has to say so.
    */
-  const [roomMode, setRoomMode] = useState<GameMode>("song");
+  const [counts, setCounts] = useState<Record<GameMode, number>>({ ...DEFAULT_SECTION_COUNTS });
+  /** What the server drew, in playing order. */
+  const [sections, setSections] = useState<SectionSummary[]>([]);
+  const [questionCount, setQuestionCount] = useState(0);
   const [catalog, setCatalog] = useState<SongListEntry[]>([]);
   const [catalogNote, setCatalogNote] = useState("");
   const [setlistNote, setSetlistNote] = useState("");
-  const [songCount, setSongCount] = useState(10);
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -249,18 +258,16 @@ export default function Home() {
     if (host !== null) {
       setRoomId(room);
       setHostToken(host);
-      // The mode lives on the room, not in this tab, so a refresh asks the
-      // server what it is rather than guessing.
+      // The setlist lives on the room, not in this tab, so a refresh asks the
+      // server what was drawn rather than showing this build's defaults.
       void (async () => {
-        let mode: GameMode = "song";
         try {
-          mode = (await lookupRoom(room, apiBase())).mode;
+          const found = await lookupRoom(room, apiBase());
+          applyDrawnSections(found.sections, found.questionCount);
         } catch {
-          /* the lookup is a convenience; the song setup is the safe fallback */
+          /* a convenience; the defaults stay on screen and saving replaces them */
         }
-        setRoomMode(mode);
-        setPickedMode(mode);
-        if (!isTextMode(mode)) await loadCatalog(room, host);
+        await loadCatalog(room, host);
       })();
       return;
     }
@@ -306,24 +313,32 @@ export default function Home() {
     }
   }
 
+  /** Writes back what the server drew, which is not always what was asked for. */
+  function applyDrawnSections(drawn: readonly SectionSummary[], total: number): void {
+    setSections([...drawn]);
+    setQuestionCount(total);
+    setCounts((current) => {
+      const next = { ...current };
+      for (const section of drawn) next[section.mode] = section.count;
+      return next;
+    });
+  }
+
   const onCreateRoom = async (): Promise<void> => {
     setBusy(true);
     try {
       // The room comes first: the catalog is host-authorized, and there is no
-      // host token until the room exists. The mode is chosen here and the
-      // server records it on the room; everything after this reads it back.
-      const created = await createRoom({ mode: pickedMode }, apiBase());
+      // host token until the room exists. Nothing is chosen here — every room
+      // plays the same three sections in the same order, and the server draws
+      // its defaults. The setup screen only changes how many of each.
+      const created = await createRoom({}, apiBase());
       writeStorage(hostKey(created.roomId), created.hostToken);
       setRoomId(created.roomId);
       setHostToken(created.hostToken);
-      setRoomMode(created.mode);
-      setSetlistNote(
-        isTextMode(created.mode) ? `${created.questionCount}문제로 진행합니다.` : "",
-      );
+      applyDrawnSections(created.sections, created.questionCount);
+      setSetlistNote("");
       window.location.hash = `room=${encodeURIComponent(created.roomId)}`;
-      // A text room draws from the server's own bank; there is no catalog to
-      // register media against.
-      if (!isTextMode(created.mode)) await loadCatalog(created.roomId, created.hostToken);
+      await loadCatalog(created.roomId, created.hostToken);
     } catch (error) {
       setToast(error instanceof ApiError ? error.message : "방을 만들지 못했습니다.");
     } finally {
@@ -351,23 +366,19 @@ export default function Home() {
 
     setBusy(true);
     try {
-      // The mode travels with every reconfiguration, so the room's recorded
-      // mode and this screen never disagree.
-      const body = isTextMode(roomMode)
-        ? { mode: roomMode }
-        : { mode: roomMode, songCount, media };
-      const setlist = await setSetlist(roomId, hostToken, body, apiBase());
+      const setlist = await setSetlist(roomId, hostToken, { counts, media }, apiBase());
+      applyDrawnSections(setlist.sections, setlist.questionCount);
 
-      if (isTextMode(setlist.mode)) {
-        setSetlistNote(`${setlist.questionCount}문제로 진행합니다. 방마다 순서가 새로 섞입니다.`);
-        return;
-      }
+      const songs = setlist.sections.find((section) => section.mode === "song")?.count ?? 0;
       setSetlistNote(
         setlist.questionCount === 0
-          ? "재생 가능한 곡이 없습니다. 음원을 등록해 주세요."
-          : `${setlist.questionCount}곡으로 진행합니다. (재생 가능 ${setlist.playableCount}곡` +
-            (skipped > 0 ? `, 입력이 덜 된 ${skipped}곡 제외` : "") +
-            ")",
+          ? "출제할 문제가 없습니다. 음원을 등록하거나 문제 수를 올려 주세요."
+          : `${setlist.questionCount}문제로 진행합니다.` +
+            (songs === 0
+              ? ""
+              : ` (재생 가능 ${setlist.playableCount}곡` +
+                (skipped > 0 ? `, 입력이 덜 된 ${skipped}곡 제외` : "") +
+                ")"),
       );
       if (setlist.registrationIssues.length > 0) {
         setToast(`등록한 음원 중 ${setlist.registrationIssues.length}곡이 조건을 만족하지 않았습니다.`);
@@ -448,7 +459,9 @@ export default function Home() {
           ? `방장 연결이 끊겼습니다. ${hostWait}초 안에 돌아오지 않으면 게임이 여기서 종료됩니다.`
           : `방장 연결이 끊겼습니다. ${hostWait}초 뒤 자동으로 이어집니다.`;
 
-  const mode: GameMode = round?.question.mode ?? state?.mode ?? roomMode;
+  // The live round's own kind first; the room's next-up kind between rounds.
+  // Songs open every game, so that is the fallback before any of it arrives.
+  const mode: GameMode = round?.question.mode ?? state?.mode ?? "song";
   const textMode = isTextMode(mode);
   const totalQuestions = round?.question.totalQuestions ?? state?.totalQuestions ?? 0;
   const reveal = state?.reveal ?? null;
@@ -550,25 +563,18 @@ export default function Home() {
                   <div>방 만들기</div>
                   <span className="host-only">HOST</span>
                 </div>
-                <p>방장은 문제를 고르고 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.</p>
-                {/* 게임 모드는 방을 만들기 전에 고릅니다. 서버가 방에 기록하고,
-                    이후의 모든 화면은 서버가 알려 준 모드만 보고 그립니다. */}
-                <fieldset className="mode-select">
-                  <legend>게임 모드</legend>
-                  {GAME_MODES.map((option) => (
-                    <label key={option}>
-                      <input
-                        type="radio"
-                        name="game-mode"
-                        value={option}
-                        checked={pickedMode === option}
-                        onChange={() => setPickedMode(option)}
-                      />
+                <p>방장은 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.</p>
+                {/* 고를 모드가 없습니다. 한 방이 곧 한 게임이고, 아래 순서대로
+                    끝까지 이어서 진행합니다. 몇 문제씩 낼지는 방을 만든 뒤
+                    설정 화면에서 조절합니다. */}
+                <ol className="section-plan">
+                  {SECTION_ORDER.map((option) => (
+                    <li key={option}>
                       <b>{MODE_LABEL[option]}</b>
                       <small>{MODE_HINT[option]}</small>
-                    </label>
+                    </li>
                   ))}
-                </fieldset>
+                </ol>
               </section>
               <button className="start-button" onClick={() => void onCreateRoom()} disabled={busy}>
                 <span>방 만들기</span>
@@ -585,18 +591,18 @@ export default function Home() {
             <div>
               <span className="eyebrow">HOST SETUP · {roomId}</span>
               <h1>
-                {isTextMode(roomMode) ? "문제를 확인하고" : "곡을 고르고"}
+                문제 수를 정하고
                 <br />
                 <em>방에 입장하세요.</em>
               </h1>
-              <p className="mode-badge">{MODE_LABEL[roomMode]}</p>
+              <p className="mode-badge">{describeSections(sections, questionCount)}</p>
             </div>
           </div>
 
           <div className="lobby-grid">
-            {/* 속담·사자성어 모드에서는 서버가 문제를 갖고 있으므로 통째로 숨깁니다. */}
-            {!isTextMode(roomMode) && (
-              <section className="panel playlist-card">
+            {/* 노래 구간에만 쓰입니다. 노래를 0문제로 두면 필요 없지만, 어느 곡이
+                왜 빠졌는지 확인하는 곳이기도 해서 항상 보여 줍니다. */}
+            <section className="panel playlist-card">
                 <div className="panel-title">
                   <div>음원 등록</div>
                   <span>{catalogNote}</span>
@@ -616,8 +622,7 @@ export default function Home() {
                     <SongRow key={song.id} song={song} drafts={draftsRef.current} />
                   ))}
                 </div>
-              </section>
-            )}
+            </section>
 
             <aside className="lobby-side">
               <section className="panel settings-card">
@@ -625,29 +630,27 @@ export default function Home() {
                   <div>게임 설정</div>
                   <span className="host-only">HOST ONLY</span>
                 </div>
-                {isTextMode(roomMode) ? (
-                  <p>
-                    {MODE_LABEL[roomMode]}는 서버가 가진 {QUESTIONS_PER_TEXT_GAME}문제를 방마다 새로 섞어
-                    모두 출제합니다.
-                  </p>
-                ) : (
-                  <>
-                    <label>
-                      <span>출제 곡 수</span>
-                      <b>{songCount}곡</b>
-                    </label>
+                {/* 순서는 고정입니다. 방장이 정하는 것은 각 구간의 문제 수뿐이고,
+                    0을 넣으면 그 구간을 건너뜁니다. */}
+                <p>아래 순서대로 한 판에 이어서 진행합니다.</p>
+                {SECTION_ORDER.map((option, index) => (
+                  <div className="setting-row" key={option}>
+                    <span>
+                      {index + 1}. {MODE_LABEL[option]}
+                    </span>
                     <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      step="1"
-                      value={songCount}
-                      onChange={(event) => setSongCount(Number(event.target.value))}
+                      type="number"
+                      min="0"
+                      max={option === "song" ? 100 : 50}
+                      value={counts[option]}
+                      onChange={(event) =>
+                        setCounts((current) => ({ ...current, [option]: Number(event.target.value) || 0 }))
+                      }
                     />
-                  </>
-                )}
+                  </div>
+                ))}
                 <button className="text-button" onClick={() => void onSaveSetlist()} disabled={busy}>
-                  {isTextMode(roomMode) ? "문제 설정 저장" : "곡 설정 저장"}
+                  문제 수 저장
                 </button>
                 {setlistNote !== "" && <p>{setlistNote}</p>}
               </section>
@@ -711,9 +714,9 @@ export default function Home() {
                 <br />
                 <em>게임을 시작하세요.</em>
               </h1>
-              {/* 서버가 ROOM_STATE 로 알려 준 모드. 이 화면이 정하지 않습니다. */}
+              {/* 서버가 ROOM_STATE 로 알려 준 진행 계획. 이 화면이 정하지 않습니다. */}
               <p className="mode-badge">
-                {MODE_LABEL[mode]} · {totalQuestions}문제
+                {describeSections(state?.sections ?? [], state?.totalQuestions ?? 0)}
               </p>
             </div>
             <div className="lobby-summary">

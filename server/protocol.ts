@@ -155,12 +155,29 @@ export type ClientMessage =
 // Server -> client
 // ---------------------------------------------------------------------------
 
+/** How many questions of one kind a room will play. */
+export interface SectionSummary {
+  mode: GameMode;
+  count: number;
+}
+
 export interface RoomStateMessage {
   type: 'ROOM_STATE';
   phase: RoomPhase;
-  /** What this room plays. Fixed before `HOST_START`, and shown in the lobby. */
+  /**
+   * The kind of question on screen, or next up between rounds.
+   *
+   * Not a property of the room: one game plays songs, then proverbs, then
+   * idioms. This says where in that run the room is, so a client with no round
+   * yet still has something to render.
+   */
   mode: GameMode;
-  /** How many questions the room will play in total. */
+  /**
+   * What the room will play, in order: e.g. 100 songs, 30 proverbs, 30 idioms.
+   * The lobby shows this so players know what they are in for.
+   */
+  sections: SectionSummary[];
+  /** How many questions the room will play in total, across every section. */
   totalQuestions: number;
   players: PlayerSummary[];
   isHost: boolean;

@@ -84,23 +84,44 @@ test('isSafeMediaUrl admits only http and https', () => {
 
 test('parseCreateRoomRequest accepts a well-formed body', () => {
   const parsed = parseCreateRoomRequest({
-    songCount: 5,
+    counts: { song: 5, proverb: 10, idiom: 0 },
     shuffle: false,
     songIds: ['ready'],
     media: [{ id: 'blank', mediaUrl: 'https://cdn.example/a.mp3', clipStart: 30, clipEnd: 40 }],
   });
   assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.ok ? parsed.value.counts : null, { song: 5, proverb: 10, idiom: 0 });
   assert.deepEqual(parsed.ok ? parsed.value.songIds : null, ['ready']);
   assert.equal(parsed.ok ? parsed.value.media?.[0]?.clipStart : null, 30);
+});
+
+test('parseCreateRoomRequest takes a partial counts object and leaves the rest to the server', () => {
+  // Only the song count matters to this host; the other two sections should
+  // come out at whatever the server's defaults are, not at zero.
+  const parsed = parseCreateRoomRequest({ counts: { song: 3 } });
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.ok ? parsed.value.counts : null, { song: 3 });
 });
 
 test('parseCreateRoomRequest rejects every malformed shape', () => {
   const rejected: unknown[] = [
     'not an object',
     [],
-    { songCount: 0 },
-    { songCount: 999 },
-    { songCount: 2.5 },
+    { counts: 5 },
+    { counts: [] },
+    // Zero is allowed — it drops a section — but negatives, fractions, and
+    // counts past what the banks hold are not.
+    { counts: { song: -1 } },
+    { counts: { song: 2.5 } },
+    { counts: { song: 999 } },
+    { counts: { proverb: 51 } },
+    { counts: { quiz: 3 } },
+    { counts: { song: '5' } },
+    // Both removed, and refused rather than ignored: a client still sending
+    // either was built when a room played one mode, and quietly handing it a
+    // three-section game would look like the picker had stopped working.
+    { mode: 'proverb' },
+    { songCount: 5 },
     { songIds: [1, 2] },
     { shuffle: 'yes' },
     { media: {} },
@@ -185,13 +206,13 @@ test('POST /api/rooms issues a join code and a host token that actually works', 
     const response = await fetch(`${base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ songCount: 1 }),
+      body: JSON.stringify({ counts: { song: 1, proverb: 0, idiom: 0 } }),
     });
     assert.equal(response.status, 201);
     assert.equal(response.headers.get('cache-control'), 'no-store');
 
-    const body = (await response.json()) as { roomId: string; hostToken: string; songCount: number };
-    assert.equal(body.songCount, 1);
+    const body = (await response.json()) as { roomId: string; hostToken: string; questionCount: number };
+    assert.equal(body.questionCount, 1);
     assert.notEqual(body.roomId, body.hostToken);
     // Different exposure demands different entropy (analysis §7).
     assert.ok(body.hostToken.length > body.roomId.length * 2);
@@ -259,12 +280,14 @@ test('a clip outside the 5-15s range is reported per song rather than failing th
   });
 });
 
-test('a room with nothing playable is created anyway, so its host can fix it', async () => {
+test('a room that draws nothing at all is created anyway, so its host can fix it', async () => {
   await withServer(
     async ({ base, game }) => {
-      // The host needs their token before they may read the catalog, so
-      // refusing creation here would leave them with no way forward.
-      const { roomId } = await createRoom(base);
+      // Nothing playable in the catalog *and* both text sections dropped, which
+      // is the only way a room comes out empty now. The host needs their token
+      // before they may read the catalog, so refusing creation here would leave
+      // them with no way forward.
+      const { roomId } = await createRoom(base, { counts: { song: 5, proverb: 0, idiom: 0 } });
       const room = game.getRoom(roomId);
       assert.equal(room?.getQuestionCount(), 0);
 
@@ -279,77 +302,110 @@ test('a room with nothing playable is created anyway, so its host can fix it', a
   );
 });
 
-// --- Game modes -------------------------------------------------------------
+// --- One room, three sections in order --------------------------------------
 
-test('parseCreateRoomRequest accepts the three modes and refuses anything else', () => {
-  for (const mode of ['song', 'proverb', 'idiom']) {
-    const parsed = parseCreateRoomRequest({ mode });
-    assert.equal(parsed.ok, true, `should have accepted ${mode}`);
-    assert.equal(parsed.ok ? parsed.value.mode : null, mode);
-  }
-  // Rejected rather than defaulted: a host who asked for a mode this build does
-  // not have should be told, not quietly given the song game.
-  for (const mode of ['', 'SONG', 'proverbs', 'quiz', 42, null, ['song']]) {
-    assert.equal(parseCreateRoomRequest({ mode }).ok, false, `should have refused ${JSON.stringify(mode)}`);
-  }
-  // Omitting it is not an error; it means the original game.
-  assert.equal(parseCreateRoomRequest({}).ok, true);
-});
-
-test('creating a room in each mode records that mode and draws its questions', async () => {
+test('a room with no body at all plays every section, songs first', async () => {
   await withServer(async ({ base, game }) => {
-    for (const mode of ['song', 'proverb', 'idiom'] as const) {
-      // A text mode is skipped only when someone's own file under 문제/
-      // will not load, leaving that bank empty. This test is about the route,
-      // and there is nothing to create a room from.
-      if (mode !== 'song' && drawnQuestions(mode) === 0) continue;
+    // No `mode`, no counts, no body: this is the whole "make a room" flow now.
+    const response = await fetch(`${base}/api/rooms`, { method: 'POST' });
+    assert.equal(response.status, 201);
+    const body = (await response.json()) as {
+      roomId: string;
+      sections: { mode: string; count: number }[];
+      questionCount: number;
+    };
 
-      const response = await fetch(`${base}/api/rooms`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(mode === 'song' ? { mode, songCount: 1 } : { mode }),
-      });
-      assert.equal(response.status, 201);
-      const body = (await response.json()) as { roomId: string; mode: string; questionCount: number };
+    assert.deepEqual(
+      body.sections.map((section) => section.mode),
+      ['song', 'proverb', 'idiom'],
+      'the running order is fixed and reported in playing order',
+    );
+    assert.equal(
+      body.questionCount,
+      body.sections.reduce((total, section) => total + section.count, 0),
+    );
 
-      assert.equal(body.mode, mode);
-      assert.equal(body.questionCount, mode === 'song' ? 1 : drawnQuestions(mode));
-
-      // The room itself holds the mode, not just the response body.
-      const room = game.getRoom(body.roomId);
-      assert.equal(room?.getMode(), mode);
-      assert.equal(room?.getQuestionCount(), mode === 'song' ? 1 : drawnQuestions(mode));
-
-      // And a joining player can read it without a host token.
-      const lookup = (await (await fetch(`${base}/api/rooms/${body.roomId}`)).json()) as {
-        mode: string;
-        ready: boolean;
-      };
-      assert.equal(lookup.mode, mode);
-      assert.equal(lookup.ready, true);
-    }
+    // The room holds the same plan, and it starts with a song.
+    const room = game.getRoom(body.roomId);
+    assert.equal(room?.getQuestionCount(), body.questionCount);
+    assert.equal(room?.getMode(), 'song');
+    assert.deepEqual(room?.getSectionCounts(), body.sections);
   });
 });
 
-test('a text room needs no media registration and no song catalog', async () => {
-  // The song catalog here is empty of playable songs on purpose: a proverb room
-  // must be ready to start regardless.
+test('a count is clamped to what is actually available, and reported clamped', async () => {
+  await withServer(async ({ base }) => {
+    // One playable song in the fixture, so asking for 100 must come back as 1.
+    const response = await fetch(`${base}/api/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ counts: { song: 100, proverb: 2, idiom: 3 } }),
+    });
+    const body = (await response.json()) as { sections: { mode: string; count: number }[] };
+    assert.deepEqual(body.sections, [
+      { mode: 'song', count: 1 },
+      { mode: 'proverb', count: 2 },
+      { mode: 'idiom', count: 3 },
+    ]);
+  });
+});
+
+test('a section set to zero is dropped from the game', async () => {
+  await withServer(async ({ base, game }) => {
+    const { roomId } = await createRoom(base, { counts: { song: 0, proverb: 2, idiom: 0 } });
+    const room = game.getRoom(roomId);
+    assert.deepEqual(room?.getSectionCounts(), [
+      { mode: 'song', count: 0 },
+      { mode: 'proverb', count: 2 },
+      { mode: 'idiom', count: 0 },
+    ]);
+    // With no songs, the first question is a proverb — so is the reported mode.
+    assert.equal(room?.getMode(), 'proverb');
+  });
+});
+
+test('a room with no playable songs still starts, on its text sections alone', async () => {
+  // The song catalog here has nothing playable on purpose. Songs are one
+  // section of three, so losing them must not stop the game.
   await withServer(
     async ({ base, game }) => {
-      const { roomId } = await createRoom(base, { mode: 'idiom' });
+      const { roomId } = await createRoom(base, {});
       const room = game.getRoom(roomId);
-      assert.equal(room?.getQuestionCount(), drawnQuestions('idiom'));
+      assert.deepEqual(room?.getSectionCounts(), [
+        { mode: 'song', count: 0 },
+        { mode: 'proverb', count: drawnQuestions('proverb') },
+        { mode: 'idiom', count: drawnQuestions('idiom') },
+      ]);
 
-      room?.handleMessage({ type: 'JOIN_ROOM', roomId, nickname: '방장' }, null, 0);
+      room?.handleMessage({ type: 'JOIN_ROOM', roomId, nickname: '방장', hostToken: room.hostToken }, null, 0);
       const started = room?.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 0);
       assert.equal(
         started?.some((effect) => effect.kind === 'broadcast' && effect.message.type === 'COUNTDOWN_STARTED'),
         true,
-        'a text room starts with no playable songs at all',
       );
     },
     { songs: [SONGS[1] as RawSongRecord] },
   );
+});
+
+test('a joining player can read the plan without a host token', async () => {
+  await withServer(async ({ base }) => {
+    const { roomId } = await createRoom(base, { counts: { song: 1, proverb: 2, idiom: 3 } });
+    const lookup = (await (await fetch(`${base}/api/rooms/${roomId}`)).json()) as {
+      mode: string;
+      sections: { mode: string; count: number }[];
+      questionCount: number;
+      ready: boolean;
+    };
+    assert.equal(lookup.mode, 'song', 'songs open, so that is what is next up');
+    assert.deepEqual(lookup.sections, [
+      { mode: 'song', count: 1 },
+      { mode: 'proverb', count: 2 },
+      { mode: 'idiom', count: 3 },
+    ]);
+    assert.equal(lookup.questionCount, 6);
+    assert.equal(lookup.ready, true);
+  });
 });
 
 test('a room creation response never contains an answer, in any mode', async () => {
@@ -371,39 +427,43 @@ test('a room creation response never contains an answer, in any mode', async () 
   });
 });
 
-test('the host may change the mode while the room is still in the lobby', async () => {
+test('the host may change the section counts while the room is still in the lobby', async () => {
   await withServer(async ({ base, game }) => {
-    const { roomId, hostToken } = await createRoom(base, { mode: 'song', songCount: 1 });
-    assert.equal(game.getRoom(roomId)?.getMode(), 'song');
+    const { roomId, hostToken } = await createRoom(base, { counts: { song: 1, proverb: 0, idiom: 0 } });
+    assert.equal(game.getRoom(roomId)?.getQuestionCount(), 1);
 
     const response = await fetch(`${base}/api/rooms/${roomId}/songs`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json', 'x-host-token': hostToken },
-      body: JSON.stringify({ mode: 'proverb' }),
+      body: JSON.stringify({ counts: { song: 0, proverb: 4, idiom: 0 } }),
     });
     assert.equal(response.status, 200);
 
-    const body = (await response.json()) as { mode: string; questionCount: number };
-    assert.equal(body.mode, 'proverb');
-    assert.equal(body.questionCount, drawnQuestions('proverb'));
-    assert.equal(game.getRoom(roomId)?.getMode(), 'proverb');
-    assert.equal(game.getRoom(roomId)?.getQuestionCount(), drawnQuestions('proverb'));
+    const body = (await response.json()) as { sections: { mode: string; count: number }[]; questionCount: number };
+    assert.deepEqual(body.sections, [
+      { mode: 'song', count: 0 },
+      { mode: 'proverb', count: 4 },
+      { mode: 'idiom', count: 0 },
+    ]);
+    assert.equal(body.questionCount, 4);
+    assert.equal(game.getRoom(roomId)?.getQuestionCount(), 4);
+    assert.equal(game.getRoom(roomId)?.getMode(), 'proverb', 'the first question is a proverb now');
   });
 });
 
 test('the setlist is frozen once the game starts', async () => {
   await withServer(async ({ base, game }) => {
-    const { roomId, hostToken } = await createRoom(base, { songCount: 1 });
+    const { roomId, hostToken } = await createRoom(base, { counts: { song: 1, proverb: 0, idiom: 0 } });
     const room = game.getRoom(roomId);
     assert.ok(room);
 
-    room.handleMessage({ type: 'JOIN_ROOM', roomId, nickname: '방장' }, null, 0);
+    room.handleMessage({ type: 'JOIN_ROOM', roomId, nickname: '방장', hostToken: room.hostToken }, null, 0);
     room.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 0);
 
     const response = await fetch(`${base}/api/rooms/${roomId}/songs`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json', 'x-host-token': hostToken },
-      body: JSON.stringify({ songCount: 1 }),
+      body: JSON.stringify({ counts: { song: 1 } }),
     });
     assert.equal(response.status, 409);
   });
@@ -447,16 +507,22 @@ test('room creation is rate limited per client', async () => {
 
 test('GET /api/rooms/:id tells a join screen only whether the code is usable', async () => {
   await withServer(async ({ base, game }) => {
-    const { room } = game.createRoom({ songCount: 1 });
+    const { room } = game.createRoom({ counts: { song: 1, proverb: 0, idiom: 0 } });
 
     const found = await fetch(`${base}/api/rooms/${room.roomId}`);
     assert.equal(found.status, 200);
-    // Everything a join screen needs, and nothing else. `mode` is safe: which
-    // game is being played is not an answer to any of its questions.
+    // Everything a join screen needs, and nothing else. The plan is safe to
+    // publish: what a room is going to play is not an answer to any of it.
     assert.deepEqual(await found.json(), {
       roomId: room.roomId,
       phase: 'LOBBY',
       mode: 'song',
+      sections: [
+        { mode: 'song', count: 1 },
+        { mode: 'proverb', count: 0 },
+        { mode: 'idiom', count: 0 },
+      ],
+      questionCount: 1,
       playerCount: 0,
       joinable: true,
       ready: true,
@@ -633,7 +699,7 @@ test('path traversal and unlisted file types are refused', async () => {
 test('an API call from a disallowed origin is refused', async () => {
   await withServer(
     async ({ base, game }) => {
-      const { room } = game.createRoom({ songCount: 1 });
+      const { room } = game.createRoom({ counts: { song: 1, proverb: 0, idiom: 0 } });
 
       const blocked = await fetch(`${base}/api/rooms/${room.roomId}`, {
         headers: { origin: 'https://evil.invalid' },
@@ -652,8 +718,8 @@ test('an API call from a disallowed origin is refused', async () => {
 
 test('reap collects abandoned rooms and leaves live ones alone', async () => {
   await withServer(async ({ game }) => {
-    const abandoned = game.createRoom({ songCount: 1, now: 0 });
-    const fresh = game.createRoom({ songCount: 1, now: 0 });
+    const abandoned = game.createRoom({ counts: { song: 1, proverb: 0, idiom: 0 }, now: 0 });
+    const fresh = game.createRoom({ counts: { song: 1, proverb: 0, idiom: 0 }, now: 0 });
     assert.equal(game.roomCount(), 2);
 
     // Nothing has been collected yet: the idle window has not elapsed.

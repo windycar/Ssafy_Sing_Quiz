@@ -58,30 +58,27 @@
                 <span class="host-only">HOST</span>
               </div>
               <p class="card-copy">
-                방장은 문제를 고르고 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.
+                방장은 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.
               </p>
               <!--
-                게임 모드는 방을 만들기 전에 고릅니다. 서버가 방에 모드를 기록하고,
-                대기실과 라운드 화면은 서버가 알려 준 모드만 보고 그립니다.
+                고를 모드가 없습니다. 한 방이 곧 한 게임이고, 아래 순서대로
+                끝까지 진행합니다. 몇 문제씩 낼지는 방을 만든 뒤 설정 화면에서
+                조절합니다.
               -->
-              <fieldset id="mode-select" class="mode-select">
-                <legend>게임 모드</legend>
-                <label>
-                  <input type="radio" name="game-mode" value="song" checked />
+              <ol id="section-plan" class="section-plan">
+                <li>
                   <b>노래 맞히기</b>
                   <small>하이라이트를 듣고 곡 제목을 맞힙니다.</small>
-                </label>
-                <label>
-                  <input type="radio" name="game-mode" value="proverb" />
+                </li>
+                <li>
                   <b>속담 맞히기</b>
-                  <small>속담의 앞부분을 보고 뒷부분을 맞힙니다. 30문제.</small>
-                </label>
-                <label>
-                  <input type="radio" name="game-mode" value="idiom" />
+                  <small>속담의 앞부분을 보고 뒷부분을 맞힙니다.</small>
+                </li>
+                <li>
                   <b>사자성어 맞히기</b>
-                  <small>뜻풀이를 보고 사자성어를 맞힙니다. 30문제.</small>
-                </label>
-              </fieldset>
+                  <small>뜻풀이를 보고 사자성어를 맞힙니다.</small>
+                </li>
+              </ol>
             </section>
             <button id="go-setup" type="button" class="start-button">
               <span>방 만들기</span><b>NEW</b>
@@ -95,7 +92,7 @@
         <div class="lobby-heading">
           <div>
             <span class="eyebrow">HOST SETUP</span>
-            <h1 id="setup-heading">곡을 고르고<br /><em>방에 입장하세요.</em></h1>
+            <h1 id="setup-heading">문제 수를 정하고<br /><em>방에 입장하세요.</em></h1>
             <p id="setup-mode" class="mode-badge"></p>
           </div>
           <div class="lobby-summary">
@@ -105,7 +102,8 @@
         </div>
 
         <div class="lobby-grid">
-          <!-- 속담·사자성어 모드에서는 서버가 문제를 갖고 있으므로 통째로 숨깁니다. -->
+          <!-- 노래 구간에만 쓰입니다. 노래를 0문제로 두면 필요 없지만, 어느 곡이
+               왜 빠졌는지 확인하는 곳이기도 해서 항상 보여 줍니다. -->
           <section id="media-card" class="panel playlist-card">
             <div class="panel-title">
               <div>음원 등록</div>
@@ -130,15 +128,26 @@
                 <div>게임 설정</div>
                 <span class="host-only">HOST ONLY</span>
               </div>
-              <div id="song-count-row">
-                <label for="song-count"><span>출제 곡 수</span></label>
-                <div class="setting-row">
-                  <input id="song-count" type="number" min="1" max="100" value="10" />
-                </div>
-              </div>
-              <p id="question-count-note" class="card-copy" hidden></p>
+              <!--
+                순서는 고정입니다. 방장이 정하는 것은 각 구간의 문제 수뿐이고,
+                0을 넣으면 그 구간을 건너뜁니다.
+              -->
+              <p class="card-copy">아래 순서대로 한 판에 이어서 진행합니다.</p>
               <div class="setting-row">
-                <span id="save-setlist-label">곡 설정</span>
+                <label for="count-song">1. 노래</label>
+                <input id="count-song" type="number" min="0" max="100" value="100" />
+              </div>
+              <div class="setting-row">
+                <label for="count-proverb">2. 속담</label>
+                <input id="count-proverb" type="number" min="0" max="50" value="30" />
+              </div>
+              <div class="setting-row">
+                <label for="count-idiom">3. 사자성어</label>
+                <input id="count-idiom" type="number" min="0" max="50" value="30" />
+              </div>
+              <p id="question-count-note" class="card-copy"></p>
+              <div class="setting-row">
+                <span id="save-setlist-label">문제 수</span>
                 <button id="save-setlist" type="button" class="text-button">저장</button>
               </div>
               <p id="setlist-summary" class="card-copy"></p>

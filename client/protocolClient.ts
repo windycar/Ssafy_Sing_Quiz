@@ -34,6 +34,7 @@ import type {
   QuestionRevealInfo,
   RoomPhase,
   RoundScorer,
+  SectionSummary,
   ServerMessage,
   SongPublicInfo,
 } from '../server/protocol.ts';
@@ -122,9 +123,18 @@ export type AnswerFeedback =
 export interface ClientState {
   status: ConnectionStatus;
   phase: RoomPhase;
-  /** What this room plays. Known from the first `ROOM_STATE`, before any round. */
+  /**
+   * The kind of question on screen, or next up between rounds. Known from the
+   * first `ROOM_STATE`, before any round.
+   *
+   * Not a property of the room — one game plays songs, then proverbs, then
+   * idioms. Read `round.question.mode` when there is a round; this is the
+   * fallback for the screens that come before one.
+   */
   mode: GameMode;
-  /** How many questions the room will play in total. */
+  /** What the room will play, in order. Empty until the first `ROOM_STATE`. */
+  sections: SectionSummary[];
+  /** How many questions the room will play in total, across every section. */
   totalQuestions: number;
   roomId: string | null;
   playerId: PlayerId | null;
@@ -151,9 +161,10 @@ export function initialState(roomId: string | null = null): ClientState {
   return {
     status: 'idle',
     phase: 'LOBBY',
-    // A guess until the first ROOM_STATE says otherwise. The song game is the
-    // one a client that never hears back would have been showing anyway.
+    // A guess until the first ROOM_STATE says otherwise. Songs open every game,
+    // so that is what a client which never hears back would have shown anyway.
     mode: 'song',
+    sections: [],
     totalQuestions: 0,
     roomId,
     playerId: null,
@@ -228,6 +239,7 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         status: 'joined',
         phase: message.phase,
         mode: message.mode,
+        sections: message.sections ?? state.sections,
         totalQuestions: message.totalQuestions,
         playerId: message.playerId,
         isHost: message.isHost,

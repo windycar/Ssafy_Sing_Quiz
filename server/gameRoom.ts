@@ -25,7 +25,7 @@
 import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
 import { toRoundPublicPayload } from '../shared/songCatalog.ts';
 import { createAliasMatcher } from '../shared/answerMatching.ts';
-import { toQuestionPublic, toQuestionReveal } from '../shared/questions.ts';
+import { toQuestionPublic, toQuestionReveal, SECTION_ORDER } from '../shared/questions.ts';
 import type { GameMode, Question } from '../shared/questions.ts';
 import type { AliasMatcher } from '../shared/answerMatching.ts';
 import type {
@@ -172,9 +172,15 @@ type TimerKind = 'COUNTDOWN' | 'DEADLINE' | 'REVEAL' | 'HOST_GRACE';
 export interface CreateRoomOptions {
   roomId?: RoomId;
   hostToken?: HostToken;
-  /** What this room plays. Songs, proverbs, or four-character idioms. */
-  mode: GameMode;
-  /** The questions, already drawn and shuffled by the caller. */
+  /**
+   * The questions, already drawn and ordered by the caller.
+   *
+   * One list, not one per mode. A game is songs then proverbs then idioms in
+   * a single run, and each `Question` carries its own mode — which is what the
+   * round length, the number of scoring places, the clue on screen and the
+   * play-this cue are all read from. This engine plays whatever it is handed,
+   * in order, and has no opinion about the mix.
+   */
   questions: readonly Question[];
   now: number;
 }
@@ -202,8 +208,7 @@ export class GameRoom {
   private phase: RoomPhase = 'LOBBY';
   private readonly players = new Map<PlayerId, Player>();
   private readonly tokenIndex = new Map<PlayerToken, PlayerId>();
-  /** Both mutable only in LOBBY, through `setQuestions`. */
-  private mode: GameMode;
+  /** Mutable only in LOBBY, through `setQuestions`. */
   private questions: readonly Question[];
   private round: Round | null = null;
   private hostPlayerId: PlayerId | null = null;
@@ -225,7 +230,6 @@ export class GameRoom {
     // exposure demands different entropy (analysis §7).
     this.roomId = options.roomId ?? randomBytes(5).toString('base64url');
     this.hostToken = options.hostToken ?? randomBytes(32).toString('base64url');
-    this.mode = options.mode;
     this.questions = options.questions;
   }
 
@@ -235,8 +239,17 @@ export class GameRoom {
     return this.phase;
   }
 
+  /**
+   * What kind of question is on screen — or next up, between rounds.
+   *
+   * A room no longer *has* a mode: it plays songs, then proverbs, then idioms
+   * in one run. This reports where in that run the room is, so a lobby can say
+   * what is coming and a client with no round yet has something to render.
+   * Falls back to the first question, and to `song` for an empty room.
+   */
   getMode(): GameMode {
-    return this.mode;
+    const current = this.round?.question ?? this.questions[this.nextQuestionIndex] ?? this.questions[0];
+    return current?.mode ?? 'song';
   }
 
   getQuestionCount(): number {
@@ -244,17 +257,29 @@ export class GameRoom {
   }
 
   /**
-   * Replaces the mode and questions this room will play.
+   * How many questions of each kind this room will play, in playing order.
+   *
+   * Every section is listed, including ones at zero. A host who asked for a
+   * hundred songs and has none needs to see the zero to know why; a screen
+   * showing this to players drops the empty ones itself.
+   */
+  getSectionCounts(): { mode: GameMode; count: number }[] {
+    const counts = new Map<GameMode, number>();
+    for (const question of this.questions) counts.set(question.mode, (counts.get(question.mode) ?? 0) + 1);
+    return SECTION_ORDER.map((mode) => ({ mode, count: counts.get(mode) ?? 0 }));
+  }
+
+  /**
+   * Replaces the questions this room will play.
    *
    * A room is created and configured in two steps, so that the song catalog can
    * be handed out against a host token rather than published (analysis §7); the
-   * mode is chosen on the same screen and travels the same path. Refused
-   * outside LOBBY: changing the setlist mid-game would move the finish line and
-   * could swap the question a player is currently answering.
+   * per-section counts are set on the same screen and travel the same path.
+   * Refused outside LOBBY: changing the setlist mid-game would move the finish
+   * line and could swap the question a player is currently answering.
    */
-  setQuestions(mode: GameMode, questions: readonly Question[]): boolean {
+  setQuestions(questions: readonly Question[]): boolean {
     if (this.phase !== 'LOBBY') return false;
-    this.mode = mode;
     this.questions = questions;
     return true;
   }
@@ -576,8 +601,11 @@ export class GameRoom {
       return [this.errorTo(playerId, 'NOT_ENOUGH_PLAYERS', '참가자가 없습니다.')];
     }
     if (this.questions.length === 0) {
-      const why = this.mode === 'song' ? '재생 가능한 곡이 없습니다.' : '출제할 문제가 없습니다.';
-      return [this.errorTo(playerId, 'NOT_ENOUGH_PLAYERS', why)];
+      // Every section came back empty. For a default room that means the song
+      // list had nothing playable *and* both question files failed to load, so
+      // pointing at any one of them would be a guess; the host screen already
+      // shows which.
+      return [this.errorTo(playerId, 'NOT_ENOUGH_PLAYERS', '출제할 문제가 없습니다.')];
     }
 
     this.phase = 'COUNTDOWN';
@@ -963,7 +991,8 @@ export class GameRoom {
     return {
       type: 'ROOM_STATE',
       phase: this.phase,
-      mode: this.mode,
+      mode: this.getMode(),
+      sections: this.getSectionCounts(),
       totalQuestions: this.questions.length,
       players: [...this.players.values()].map((entry) => this.toSummary(entry)),
       isHost: player.isHost,

@@ -170,7 +170,9 @@ test('an unplayable catalog yields zero playable songs rather than crashing', as
 
 test('two clients play a full round over real sockets', async () => {
   await withServer(async ({ port, game }) => {
-    const { room } = game.createRoom();
+    // Songs only: this test plays one round and then waits for the end of the
+    // game, and the default room would put sixty text questions after it.
+    const { room } = game.createRoom({ counts: { song: 1, proverb: 0, idiom: 0 } });
 
     const host = await TestClient.connect(port);
     host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장', hostToken: room.hostToken });
@@ -231,8 +233,16 @@ test('two clients play a full round over real sockets', async () => {
 
 test('a proverb room plays over real sockets without the answer ever crossing the wire', { skip: NO_PROVERBS }, async () => {
   await withServer(async ({ port, game }) => {
-    const { room, mode, questionCount } = game.createRoom({ mode: 'proverb' });
-    assert.equal(mode, 'proverb');
+    // Songs and idioms dropped, so the first round is a proverb and this test
+    // does not have to play a hundred songs to reach one.
+    const { room, sections, questionCount } = game.createRoom({
+      counts: { song: 0, proverb: TEXT_GAME_SIZE, idiom: 0 },
+    });
+    assert.deepEqual(sections, [
+      { mode: 'song', count: 0 },
+      { mode: 'proverb', count: TEXT_GAME_SIZE },
+      { mode: 'idiom', count: 0 },
+    ]);
     assert.equal(questionCount, TEXT_GAME_SIZE);
 
     const host = await TestClient.connect(port);
@@ -305,7 +315,9 @@ test('a proverb room plays over real sockets without the answer ever crossing th
 
 test('a reconnecting client keeps its score and gets a fresh snapshot', async () => {
   await withServer(async ({ port, game }) => {
-    const { room } = game.createRoom();
+    // Songs only: this test plays one round and then waits for the end of the
+    // game, and the default room would put sixty text questions after it.
+    const { room } = game.createRoom({ counts: { song: 1, proverb: 0, idiom: 0 } });
 
     const host = await TestClient.connect(port);
     host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장', hostToken: room.hostToken });

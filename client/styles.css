@@ -1124,45 +1124,43 @@ button:disabled {
    교실 뒤에서도 읽혀야 하므로 글자 크기는 화면 폭을 따라갑니다.
    -------------------------------------------------------------------------- */
 
-.mode-select {
+/* The running order of a game. Read-only: nothing here is a control, because
+   the order is fixed and only the per-section counts are the host's to set. */
+.section-plan {
   border: 1px solid var(--line);
   margin: 12px 0 0;
   padding: 10px;
   display: grid;
   gap: 6px;
+  list-style: none;
+  counter-reset: section;
 }
-.mode-select legend {
-  font: 900 8px Consolas, monospace;
-  letter-spacing: 2px;
-  padding: 0 6px;
-}
-.mode-select label {
+.section-plan li {
   display: grid;
   grid-template-columns: auto 1fr;
-  grid-template-areas: "radio name" "radio hint";
-  gap: 0 8px;
+  grid-template-areas: "step name" "step hint";
+  gap: 0 10px;
   align-items: center;
   padding: 8px;
-  border: 1px solid transparent;
-  cursor: pointer;
 }
-.mode-select label:hover {
-  border-color: var(--line);
+.section-plan li::before {
+  counter-increment: section;
+  content: counter(section);
+  grid-area: step;
+  align-self: start;
+  background: var(--violet);
+  color: var(--white);
+  font: 900 10px Consolas, monospace;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
 }
-.mode-select label:has(input:checked) {
-  border-color: var(--ink);
-  background: var(--white);
-}
-.mode-select input {
-  grid-area: radio;
-  accent-color: var(--violet);
-  margin: 0;
-}
-.mode-select b {
+.section-plan b {
   grid-area: name;
   font-size: 13px;
 }
-.mode-select small {
+.section-plan small {
   grid-area: hint;
   color: var(--muted);
   font-size: 10px;

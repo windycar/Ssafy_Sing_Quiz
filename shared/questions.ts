@@ -26,6 +26,22 @@ export type GameMode = 'song' | 'proverb' | 'idiom';
 
 export const GAME_MODES: readonly GameMode[] = ['song', 'proverb', 'idiom'];
 
+/**
+ * The order one game plays its three kinds of question in. Fixed.
+ *
+ * A room is not "a song room" or "a proverb room": it plays songs, then
+ * proverbs, then idioms, start to finish, with nobody choosing anything. Songs
+ * open because the music is what gets a room's attention, and the rounds get
+ * shorter as the game goes on rather than longer — a 60-second round is the
+ * wrong thing to end on.
+ *
+ * The same three values as `GAME_MODES`, and deliberately a separate constant:
+ * that one says which kinds of question exist, this one says what order they
+ * are played in, and a fourth kind added later would want a considered position
+ * here rather than wherever it landed in the other list.
+ */
+export const SECTION_ORDER: readonly GameMode[] = ['song', 'proverb', 'idiom'];
+
 /** Korean labels, so the server and both clients cannot drift apart. */
 export const MODE_LABEL: Record<GameMode, string> = {
   song: '노래 맞히기',

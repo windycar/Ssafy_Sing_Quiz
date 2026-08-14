@@ -25,10 +25,10 @@ import { ProtocolClient } from './protocolClient.ts';
 import type { ClientState } from './protocolClient.ts';
 import { ApiError, createRoom, fetchCatalog, lookupRoom, setSetlist } from './api.ts';
 import type { SongListEntry } from './api.ts';
-import type { LeaderboardEntry, ServerMessage } from '../server/protocol.ts';
+import type { LeaderboardEntry, SectionSummary, ServerMessage } from '../server/protocol.ts';
 import type { MediaRegistration } from '../shared/songCatalog.ts';
 import { normalizeAnswer } from '../shared/answerMatching.ts';
-import { isGameMode, isTextMode, MODE_LABEL, MODE_PROMPT, QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
+import { isTextMode, MODE_LABEL, MODE_PROMPT } from '../shared/questions.ts';
 import type { GameMode } from '../shared/questions.ts';
 
 // ---------------------------------------------------------------------------
@@ -464,44 +464,45 @@ let client: ProtocolClient | null = null;
 let hostToken: string | null = null;
 /** The room being configured on the setup screen, before anyone has joined. */
 let setupRoomId: string | null = null;
-/**
- * The mode of the room on the setup screen.
- *
- * Only the host screen needs this, and only before anyone has joined. Once
- * there is a session the mode comes from `ROOM_STATE` like everything else —
- * this file never decides what game is being played.
- */
-let setupMode: GameMode = 'song';
 const player = new ClipPlayer();
 const youtube = new YouTubePlayer();
 
-/** The mode the host picked on the home screen. */
-function selectedMode(): GameMode {
-  const checked = document.querySelector<HTMLInputElement>('input[name="game-mode"]:checked');
-  const value = checked?.value ?? 'song';
-  return isGameMode(value) ? value : 'song';
+/** The input holding the question count for one section of the game. */
+const COUNT_INPUT: Record<GameMode, string> = {
+  song: 'count-song',
+  proverb: 'count-proverb',
+  idiom: 'count-idiom',
+};
+
+/** What the host typed for each section. Empty or junk reads as zero. */
+function selectedCounts(): Record<GameMode, number> {
+  const read = (mode: GameMode): number => {
+    const value = Number(el<HTMLInputElement>(COUNT_INPUT[mode]).value);
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+  };
+  return { song: read('song'), proverb: read('proverb'), idiom: read('idiom') };
+}
+
+/** Writes the counts the server actually drew back into the inputs. */
+function showDrawnSections(sections: readonly SectionSummary[], questionCount: number): void {
+  for (const section of sections) {
+    el<HTMLInputElement>(COUNT_INPUT[section.mode]).value = String(section.count);
+  }
+  el('question-count-note').textContent = describeSections(sections, questionCount);
 }
 
 /**
- * Rewrites the host setup screen for the chosen mode.
+ * "노래 100 · 속담 30 · 사자성어 30 — 총 160문제" — the plan, in playing order.
  *
- * A proverb or idiom room has no media to register and no count to choose —
- * the server ships all thirty questions — so the panels that exist only for
- * songs are hidden rather than left on screen doing nothing.
+ * Sections the room will not play are dropped rather than shown as zero: a
+ * game with no songs in it is a game of proverbs and idioms, and saying "노래
+ * 0" invites the reader to wonder what went wrong.
  */
-function applySetupMode(mode: GameMode): void {
-  const text = isTextMode(mode);
-  el('setup-mode').textContent = MODE_LABEL[mode];
-  el('media-card').hidden = text;
-  el('song-count-row').hidden = text;
-  el('save-setlist-label').textContent = text ? '문제 설정' : '곡 설정';
-  el('setup-heading').textContent = text ? '문제를 확인하고 방에 입장하세요.' : '곡을 고르고 방에 입장하세요.';
-
-  const note = el('question-count-note');
-  note.hidden = !text;
-  note.textContent = text
-    ? `${MODE_LABEL[mode]}는 서버가 가진 ${QUESTIONS_PER_TEXT_GAME}문제를 방마다 새로 섞어 모두 출제합니다.`
-    : '';
+function describeSections(sections: readonly SectionSummary[], questionCount: number): string {
+  const played = sections.filter((section) => section.count > 0);
+  if (played.length === 0) return '출제할 문제가 없습니다.';
+  const parts = played.map((section) => `${MODE_LABEL[section.mode]} ${section.count}`);
+  return `${parts.join(' · ')} — 총 ${questionCount}문제`;
 }
 
 function socketUrl(): string {
@@ -845,10 +846,9 @@ function render(state: ClientState): void {
     default:
       showScreen('lobby');
       el('lobby-code').textContent = state.roomId ?? '';
-      // The mode the server recorded on the room, not the radio button this
-      // tab happened to have selected.
-      el('lobby-mode').textContent =
-        `${MODE_LABEL[state.mode]} · ${state.totalQuestions}문제`;
+      // The plan the server drew, in playing order. Players see what is coming
+      // and in what order before the first countdown.
+      el('lobby-mode').textContent = describeSections(state.sections, state.totalQuestions);
       renderRoster(state);
       break;
   }
@@ -947,24 +947,21 @@ function wire(): void {
       const button = el<HTMLButtonElement>('go-setup');
       button.disabled = true;
       try {
-        // The mode is chosen here, before the room exists, and the server
-        // records it on the room. Everything after this reads it back.
-        const created = await createRoom({ mode: selectedMode() });
+        // Nothing is chosen here: every room plays the same three sections in
+        // the same order, and the server draws its defaults. The setup screen
+        // that follows is only for changing how many of each.
+        const created = await createRoom({});
         writeStorage(hostKey(created.roomId), created.hostToken);
         hostToken = created.hostToken;
         setupRoomId = created.roomId;
-        setupMode = created.mode;
 
         el('invite-code').textContent = created.roomId;
         el<HTMLInputElement>('invite-link').value = inviteLink(created.roomId);
-        el('setlist-summary').textContent =
-          isTextMode(created.mode) ? `${created.questionCount}문제로 진행합니다.` : '';
+        el('setlist-summary').textContent = '';
         location.hash = `room=${encodeURIComponent(created.roomId)}`;
-        applySetupMode(created.mode);
+        showDrawnSections(created.sections, created.questionCount);
         showScreen('setup');
-        // A text room draws from the server's own bank; there is no catalog to
-        // register media against, so there is nothing to fetch.
-        if (!isTextMode(created.mode)) await loadCatalog(created.roomId, created.hostToken);
+        await loadCatalog(created.roomId, created.hostToken);
       } catch (caught) {
         toast(caught instanceof ApiError ? caught.message : '방을 만들지 못했습니다.');
       } finally {
@@ -985,31 +982,29 @@ function wire(): void {
       button.disabled = true;
       error.hidden = true;
       try {
-        // The mode travels with every reconfiguration, so the room's recorded
-        // mode and this screen never disagree.
-        const setlist = await setSetlist(setupRoomId, hostToken, {
-          mode: setupMode,
-          ...(isTextMode(setupMode)
-            ? {}
-            : { songCount: Number(el<HTMLInputElement>('song-count').value) || 5, media }),
-        });
+        const setlist = await setSetlist(setupRoomId, hostToken, { counts: selectedCounts(), media });
 
-        if (isTextMode(setlist.mode)) {
-          el('setlist-summary').textContent = `${setlist.questionCount}문제로 진행합니다. 방마다 순서가 새로 섞입니다.`;
-        } else {
-          el('setlist-summary').textContent =
-            setlist.questionCount === 0
-              ? '재생 가능한 곡이 없습니다. 음원을 등록해야 게임을 시작할 수 있습니다.'
-              : `${setlist.questionCount}곡으로 진행합니다. (재생 가능한 곡 ${setlist.playableCount}곡` +
-                (skipped > 0 ? `, 입력이 덜 된 ${skipped}곡은 제외` : '') +
-                ')';
+        // What came back is what was actually drawn, which is not always what
+        // was asked for — 100 songs from a 40-song list is 40. Writing it back
+        // into the inputs is how the host finds that out.
+        showDrawnSections(setlist.sections, setlist.questionCount);
 
-          if (setlist.registrationIssues.length > 0) {
-            toast(`등록한 음원 중 ${setlist.registrationIssues.length}곡이 조건을 만족하지 않아 제외되었습니다.`);
-          }
-          // The catalog changed: songs that just became playable should show it.
-          await loadCatalog(setupRoomId, hostToken);
+        const songs = setlist.sections.find((section) => section.mode === 'song')?.count ?? 0;
+        el('setlist-summary').textContent =
+          setlist.questionCount === 0
+            ? '출제할 문제가 없습니다. 음원을 등록하거나 문제 수를 올려 주세요.'
+            : `${setlist.questionCount}문제로 진행합니다.` +
+              (songs === 0
+                ? ''
+                : ` (재생 가능한 곡 ${setlist.playableCount}곡` +
+                  (skipped > 0 ? `, 입력이 덜 된 ${skipped}곡은 제외` : '') +
+                  ')');
+
+        if (setlist.registrationIssues.length > 0) {
+          toast(`등록한 음원 중 ${setlist.registrationIssues.length}곡이 조건을 만족하지 않아 제외되었습니다.`);
         }
+        // The catalog changed: songs that just became playable should show it.
+        await loadCatalog(setupRoomId, hostToken);
       } catch (caught) {
         error.textContent = caught instanceof ApiError ? caught.message : '곡 설정을 저장하지 못했습니다.';
         error.hidden = false;
@@ -1149,17 +1144,16 @@ function bootstrap(): void {
     el<HTMLInputElement>('invite-link').value = inviteLink(roomId);
     showScreen('setup');
     void (async () => {
-      // The mode lives on the room, not in this tab, so a refresh asks the
-      // server what it is rather than guessing from the radio buttons.
+      // The setlist lives on the room, not in this tab, so a refresh asks the
+      // server what was drawn rather than showing this build's defaults.
       try {
         const room = await lookupRoom(roomId);
-        setupMode = room.mode;
+        showDrawnSections(room.sections, room.questionCount);
       } catch {
-        // The lookup is a convenience; a failure leaves the song setup on
-        // screen, which is what the previous build always showed.
+        // The lookup is a convenience; a failure leaves the default counts on
+        // screen, and saving will replace them anyway.
       }
-      applySetupMode(setupMode);
-      if (!isTextMode(setupMode)) await loadCatalog(roomId, storedHost);
+      await loadCatalog(roomId, storedHost);
     })();
     return;
   }

@@ -67,7 +67,7 @@ test('the host bootstrap runs create → catalog → setlist → lookup', async 
     const setlist = await setSetlist(
       created.roomId,
       created.hostToken,
-      { songCount: 2, media: [{ id: 's2', mediaUrl: 'https://media.invalid/b', clipStart: 0, clipEnd: 10 }] },
+      { counts: { song: 2, proverb: 0, idiom: 0 }, media: [{ id: 's2', mediaUrl: 'https://media.invalid/b', clipStart: 0, clipEnd: 10 }] },
       base,
     );
     assert.equal(setlist.playableCount, 2, 'registering media makes the second song playable');

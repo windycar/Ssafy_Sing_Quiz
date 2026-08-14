@@ -24,11 +24,22 @@ export interface SongListResponse {
   songs: SongListEntry[];
 }
 
+/**
+ * What one section of a game contributed, after clamping.
+ *
+ * A count is what was actually drawn, not what was asked for: 100 songs from a
+ * 40-song list is 40, and the host screen has to be able to say so.
+ */
+export interface SectionSummary {
+  mode: GameMode;
+  count: number;
+}
+
 /** The setlist a host just drew, and what was rejected from it. */
 export interface SetlistResponse {
-  /** What the room will play. Echoed back so the host screen can confirm it. */
-  mode: GameMode;
-  /** How many questions the room will play. 30 in either text mode. */
+  /** What the room will play, in playing order. Echoed back to confirm it. */
+  sections: SectionSummary[];
+  /** How many questions the room will play, across every section. */
   questionCount: number;
   /** Superseded by `questionCount`; equal to it. */
   songCount: number;
@@ -44,10 +55,13 @@ export interface CreateRoomResponse extends SetlistResponse {
 }
 
 export interface CreateRoomBody {
-  /** Which game to play. Omitted means `song`, the original. */
-  mode?: GameMode;
-  /** Song mode only; a text mode always plays its whole 30-question bank. */
-  songCount?: number;
+  /**
+   * How many questions to draw per section. Missing entries take the server's
+   * default, and 0 skips a section.
+   *
+   * There is no `mode`: every room plays songs, then proverbs, then idioms.
+   */
+  counts?: Partial<Record<GameMode, number>>;
   songIds?: string[];
   shuffle?: boolean;
   media?: MediaRegistration[];
@@ -56,8 +70,11 @@ export interface CreateRoomBody {
 export interface RoomLookupResponse {
   roomId: string;
   phase: RoomPhase;
-  /** What the room plays, so a joining player knows before they type a name. */
+  /** The kind of question on screen, or next up. See `ROOM_STATE.mode`. */
   mode: GameMode;
+  /** What the room will play, so a joining player knows what to expect. */
+  sections: SectionSummary[];
+  questionCount: number;
   playerCount: number;
   joinable: boolean;
   /** False until the host has configured a setlist. */

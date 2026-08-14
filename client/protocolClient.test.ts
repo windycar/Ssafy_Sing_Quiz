@@ -315,6 +315,7 @@ test('a ROOM_STATE snapshot restores a round already in progress', () => {
       type: 'ROOM_STATE',
       phase: 'IN_ROUND',
       mode: 'song',
+      sections: [{ mode: 'song', count: 3 }],
       totalQuestions: 3,
       players: [player('p1')],
       isHost: true,
@@ -494,6 +495,7 @@ const snapshot = (token: string): ServerMessage => ({
   type: 'ROOM_STATE',
   phase: 'LOBBY',
   mode: 'song',
+  sections: [],
   totalQuestions: 0,
   players: [],
   isHost: true,
@@ -671,7 +673,9 @@ test('a host and a player play a full game through the real client', async () =>
     await fetch(`${base}/api/rooms`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ songCount: 1 }),
+      // One song and nothing else: this test plays a round and then waits for
+      // the end of the game, and a default room would run sixty more questions.
+      body: JSON.stringify({ counts: { song: 1, proverb: 0, idiom: 0 } }),
     })
   ).json()) as { roomId: string; hostToken: string };
 
@@ -739,7 +743,7 @@ test('a refreshed player keeps their score', async () => {
   await once(running.server, 'listening');
   const port = (running.server.address() as AddressInfo).port;
 
-  const { room } = running.game.createRoom({ songCount: 1 });
+  const { room } = running.game.createRoom({ counts: { song: 1, proverb: 0, idiom: 0 } });
   let stored: string | null = null;
 
   const first = new ProtocolClient({

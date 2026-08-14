@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GAME_MODES, MODE_LABEL } from '../shared/questions.ts';
+import { MODE_LABEL, SECTION_ORDER } from '../shared/questions.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (name: string): string => readFileSync(resolve(HERE, name), 'utf8');
@@ -47,21 +47,22 @@ test('every id the UI looks up exists in the markup', () => {
   }
 });
 
-test('the room-creation screen offers exactly the three modes, in order', () => {
-  const selector = /<fieldset id="mode-select"[\s\S]*?<\/fieldset>/u.exec(HTML)?.[0];
-  assert.ok(selector, 'the mode selector is missing from the room-creation screen');
+test('the room-creation screen states the running order and offers no choice of mode', () => {
+  const plan = /<ol id="section-plan"[\s\S]*?<\/ol>/u.exec(HTML)?.[0];
+  assert.ok(plan, 'the running order is missing from the room-creation screen');
 
-  // The value the server is sent, one radio per mode.
-  const values = [...selector.matchAll(/value="([^"]+)"/gu)].map((match) => match[1]);
-  assert.deepEqual(values, [...GAME_MODES], '노래 → 속담 → 사자성어');
+  // The Korean label a host actually reads, in playing order, from the shared
+  // table so the two clients and the server cannot drift apart.
+  const labels = [...plan.matchAll(/<b>([^<]+)<\/b>/gu)].map((match) => match[1]);
+  assert.deepEqual(labels, SECTION_ORDER.map((mode) => MODE_LABEL[mode]), '노래 → 속담 → 사자성어');
 
-  // And the Korean label a host actually reads, from the shared table so the
-  // two clients and the server cannot drift apart.
-  for (const mode of GAME_MODES) {
-    assert.ok(selector.includes(MODE_LABEL[mode]), `"${MODE_LABEL[mode]}" is not offered`);
+  // And nothing to pick. A room is one game of all three; the only thing a
+  // host sets is how many questions each section holds, on the next screen.
+  assert.equal(HTML.includes('name="game-mode"'), false, 'the mode picker must be gone');
+  assert.equal(HTML.includes('id="mode-select"'), false);
+  for (const mode of SECTION_ORDER) {
+    assert.ok(HTML.includes(`id="count-${mode}"`), `#count-${mode} is missing from the setup screen`);
   }
-  assert.equal((selector.match(/type="radio"/gu) ?? []).length, GAME_MODES.length);
-  assert.ok(selector.includes('checked'), 'one mode has to be selected by default');
 });
 
 test('a text round has a clue card, and it is the media stage that gives way to it', () => {
@@ -87,7 +88,10 @@ test('progress, the mode badge, and the answer prompt all come from server state
     UI.includes('round.question.index + 1') && UI.includes('${total}'),
     'the progress counter must be built from question.index and totalQuestions',
   );
-  assert.ok(UI.includes('MODE_LABEL[state.mode]'), 'the lobby badge must name the mode the server sent');
+  assert.ok(
+    UI.includes('describeSections(state.sections, state.totalQuestions)'),
+    'the lobby badge must show the plan the server sent, not one this tab picked',
+  );
   assert.ok(UI.includes('MODE_PROMPT[mode]'), 'the question prompt must follow the mode');
   assert.ok(UI.includes('ANSWER_PLACEHOLDER[mode]'), 'the answer box must follow the mode');
 

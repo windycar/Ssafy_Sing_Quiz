@@ -1,399 +1,1278 @@
-/* Reference client styling. Deliberately one small stylesheet with no build
-   step, matching the dependency-free constraint of the rest of the project. */
+/*
+  Drop the Beat — 화면 스타일.
+
+  `music-quiz/app/globals.css` 의 디자인을 그대로 가져오되, 폭 제약을
+  뒤집었습니다. 원본은 `min-width: 1180px` 의 PC 전용이었지만 이 게임은
+  방장만 큰 화면(교실 앞 컴퓨터)이고 참가자는 전부 폰입니다. 그래서 좁은
+  화면을 기본으로 하고, 넓어지면 여러 열로 펼칩니다. 참가자 화면이 깨지면
+  게임 자체가 성립하지 않습니다.
+*/
 
 :root {
-  --bg: #0e1015;
-  --panel: #171a22;
-  --panel-2: #1f2430;
-  --text: #e8eaf0;
-  --muted: #9aa3b2;
-  --accent: #ff5c8a;
-  --accent-2: #4dd6c1;
-  --danger: #ff6b6b;
-  --line: #2a3040;
-  --radius: 10px;
+  --ink: #0d0f12;
+  --paper: #f4f2ec;
+  --white: #fffefb;
+  --lime: #c7ff2e;
+  --violet: #8d69ff;
+  --orange: #ff6a3d;
+  --blue: #2a75ff;
+  --muted: #74777e;
+  --line: #d8d5ce;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* The UA rule for `[hidden]` is `display: none` at the lowest specificity, so
-   any class here that sets `display` silently defeats it — which is how host
-   controls (`.row`) and the answer form (`.stack`) leaked onto a player's
-   screen. The whole UI is toggled through the `hidden` property, so this rule
-   has to outrank every layout class in the file. */
-[hidden] {
-  display: none !important;
+html {
+  background: var(--paper);
 }
 
 body {
   margin: 0;
-  padding: 0 1rem 4rem;
-  background: var(--bg);
-  color: var(--text);
-  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  line-height: 1.6;
+  color: var(--ink);
+  background:
+    linear-gradient(rgba(15, 16, 19, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 16, 19, 0.035) 1px, transparent 1px), var(--paper);
+  background-size: 40px 40px;
+  font-family: Inter, Pretendard, "Noto Sans KR", -apple-system, Arial, sans-serif;
 }
 
-.topbar {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  max-width: 46rem;
-  margin: 0 auto;
-  padding: 1.25rem 0;
-  border-bottom: 1px solid var(--line);
+button,
+input {
+  font: inherit;
+}
+button {
+  color: inherit;
+}
+button:not(:disabled) {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
 }
 
-.topbar h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: 0.02em;
+.app-shell {
+  min-height: 100vh;
 }
 
-main {
-  max-width: 46rem;
-  margin: 0 auto;
-}
-
-.screen {
-  padding: 1.5rem 0;
-}
-
-h2 {
-  font-size: 1.35rem;
-  margin: 0 0 0.75rem;
-}
-
-h3 {
-  font-size: 1rem;
-  color: var(--muted);
-  margin: 1.5rem 0 0.5rem;
-}
-
-hr {
-  border: none;
-  border-top: 1px solid var(--line);
-  margin: 2rem 0;
+[hidden] {
+  display: none !important;
 }
 
 .muted {
   color: var(--muted);
-  font-size: 0.9rem;
 }
-
 .error {
-  color: var(--danger);
+  color: var(--orange);
 }
-
 .warning {
-  background: #2a1f24;
-  border: 1px solid #4a2b38;
-  border-radius: var(--radius);
-  padding: 0.75rem 1rem;
-  font-size: 0.9rem;
+  color: var(--orange);
 }
-
-.status {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
 .code {
-  font-family: ui-monospace, "Cascadia Mono", monospace;
-  font-size: 1.1rem;
-  background: var(--panel-2);
-  padding: 0.15rem 0.5rem;
-  border-radius: 6px;
-  letter-spacing: 0.08em;
+  font-family: Consolas, ui-monospace, monospace;
+  letter-spacing: 2px;
 }
 
-/* --- Forms ---------------------------------------------------------------- */
+/* --- 상단 바 -------------------------------------------------------------- */
 
-.stack {
+.topbar {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  background: var(--ink);
+  color: white;
+  border-bottom: 4px solid var(--lime);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--lime);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  transform: rotate(-8deg);
+  flex: 0 0 auto;
+}
+.brand-mark i {
+  display: block;
+  width: 3px;
+  background: var(--lime);
+  border-radius: 4px;
+}
+.brand-mark i:nth-child(1) {
+  height: 10px;
+}
+.brand-mark i:nth-child(2) {
+  height: 20px;
+}
+.brand-mark i:nth-child(3) {
+  height: 14px;
+}
+.brand-copy {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  max-width: 24rem;
+  line-height: 1;
+}
+.brand-copy b {
+  font-size: 15px;
+  letter-spacing: -0.5px;
+  font-style: italic;
+}
+.brand-copy small {
+  color: #8f949e;
+  font-size: 7px;
+  letter-spacing: 2.2px;
+  margin-top: 5px;
 }
 
-.row {
+.top-actions {
+  margin-left: auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
   align-items: center;
-  margin: 0.75rem 0;
+  gap: 14px;
 }
-
-label {
-  font-size: 0.85rem;
-  color: var(--muted);
+.connection {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: #a9adb4;
 }
-
-input {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.55rem 0.7rem;
-  font: inherit;
-  min-width: 0;
+.connection i,
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 10px rgba(199, 255, 46, 0.7);
+  display: inline-block;
+  flex: 0 0 auto;
 }
-
-input:focus-visible,
-button:focus-visible,
-summary:focus-visible {
-  outline: 2px solid var(--accent-2);
-  outline-offset: 2px;
-}
-
-button {
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.55rem 1.1rem;
-  font: inherit;
-  cursor: pointer;
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--accent-2);
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #17070d;
+.connection b {
+  color: var(--lime);
   font-weight: 700;
 }
 
-/* --- Song registration ---------------------------------------------------- */
+/* --- 공통 패널 ------------------------------------------------------------ */
 
-details {
+.panel {
+  background: rgba(255, 254, 251, 0.94);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.75rem 1rem;
-  margin: 1rem 0;
+  box-shadow: 5px 5px 0 rgba(13, 15, 18, 0.08);
+}
+.panel-title {
+  min-height: 46px;
+  padding: 0 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1.1px;
+}
+.panel-title > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-title > span {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+  text-align: right;
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--ink);
+  color: var(--lime);
+  font: 800 9px/1 Consolas, monospace;
+  letter-spacing: 1.5px;
+  transform: rotate(-1deg);
+}
+.card-copy {
+  margin: 12px 15px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #5c6067;
+}
+.card-copy b {
+  color: var(--ink);
 }
 
-summary {
-  cursor: pointer;
-  font-weight: 600;
+/* --- 로비 계열 화면 (홈 / 설정 / 대기실) ---------------------------------- */
+
+.lobby {
+  padding: 24px 16px 48px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+.lobby-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+.lobby-heading h1,
+.result-head h1 {
+  margin: 14px 0 0;
+  font-size: clamp(30px, 7vw, 72px);
+  line-height: 0.98;
+  letter-spacing: -2.5px;
+  font-weight: 950;
+}
+.lobby-heading h1 em,
+.result-head h1 em {
+  color: var(--violet);
+  font-style: normal;
+  text-decoration: underline;
+  text-decoration-thickness: 6px;
+  text-underline-offset: 4px;
+}
+.lobby-summary {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  border-left: 1px solid var(--line);
+  padding-left: 20px;
+}
+.lobby-summary b {
+  font-size: clamp(24px, 5vw, 42px);
+  line-height: 0.9;
+  letter-spacing: -1px;
+}
+.lobby-summary span {
+  font: 800 9px/1.2 Consolas, monospace;
+  color: var(--muted);
+  width: 55px;
 }
 
-.song-list {
+.lobby-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.lobby-side {
+  display: grid;
+  gap: 14px;
+}
+.settings-card,
+.playlist-card,
+.player-panel {
+  padding-bottom: 14px;
+}
+.host-only {
+  color: var(--orange) !important;
+}
+.settings-card label,
+.setting-row {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 15px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.setting-row {
+  border-top: 1px dashed #ddd9d1;
+}
+.setting-row input,
+.settings-card input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--ink);
+  padding: 0 9px;
+  font-size: 11px;
+  background: white;
+}
+.text-button {
+  border: 0;
+  background: none;
+  color: var(--violet);
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 2px;
+  white-space: nowrap;
+}
+.start-button {
+  min-height: 58px;
+  width: 100%;
+  border: 0;
+  background: var(--lime);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  box-shadow: 5px 5px 0 var(--ink);
+  font-weight: 950;
+  text-transform: uppercase;
+}
+.start-button:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.start-button b {
+  font: 700 9px Consolas, monospace;
+}
+.ghost-button {
+  border: 1px solid var(--ink);
+  background: white;
+  padding: 9px 16px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+/* 대기실 명단 */
+.player-grid {
   list-style: none;
-  margin: 0.75rem 0 0;
-  padding: 0;
-  max-height: 22rem;
-  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 14px;
+  margin: 0;
+}
+.player-grid > li {
+  display: grid;
+  grid-template-columns: 1fr 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  border: 1px solid #e2dfd7;
+  padding: 7px 10px;
+  background: white;
+  position: relative;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+}
+.player-grid > li::before {
+  content: "";
+  position: absolute;
+  width: 3px;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--lime);
+}
+.player-grid > li.waiting::before {
+  background: #d4d1c9;
+}
+.player-grid > li.waiting {
+  opacity: 0.7;
+}
+.player-grid .state {
+  font: 900 9px Consolas, monospace;
+  color: #5b7800;
+  text-align: right;
 }
 
-.song {
-  border-top: 1px solid var(--line);
-  padding: 0.6rem 0;
+/* 곡 목록 */
+#media-panel summary {
+  margin: 0 15px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
 }
-
+#song-filter {
+  width: calc(100% - 30px);
+  margin: 0 15px 8px;
+  height: 38px;
+  border: 1px solid var(--ink);
+  padding: 0 10px;
+  font-size: 11px;
+}
+.song-stack {
+  list-style: none;
+  margin: 0;
+  padding: 0 13px;
+  max-height: 420px;
+  overflow: auto;
+}
+.song-stack > li {
+  padding: 10px 0;
+  border-bottom: 1px solid #ebe8e1;
+}
 .song-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
   align-items: baseline;
+  gap: 8px;
 }
-
+.song-title {
+  font-size: 12px;
+}
+.song-artist,
 .song-state {
-  font-size: 0.8rem;
-  color: var(--muted);
+  font-size: 9px;
 }
-
-.song-state.ok {
-  color: var(--accent-2);
-}
-
 .song-media {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.4rem;
-  margin-top: 0.4rem;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: 7px;
 }
-
-/* --- Lobby ---------------------------------------------------------------- */
-
-.roster {
-  list-style: none;
-  padding: 0;
-  margin: 1rem 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: 0.5rem;
-}
-
-.roster li {
-  background: var(--panel);
+.song-media input {
+  height: 34px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.5rem 0.75rem;
+  padding: 0 8px;
+  font-size: 11px;
+  min-width: 0;
+}
+
+/* --- 게임 화면 ------------------------------------------------------------ */
+
+.game-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding: 14px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.scoreboard {
+  display: flex;
+  flex-direction: column;
+  order: 3;
+}
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 11px;
+}
+.rank-list > li {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  border-bottom: 1px solid #e7e4dd;
+  font-size: 11px;
+  font-weight: 800;
+}
+.rank-list > li .rank {
+  font: italic 950 18px Arial;
+  color: #b7b3aa;
+}
+.rank-list > li .score {
+  font: 900 11px Consolas, monospace;
+}
+.rank-list > li.me {
+  background: rgba(199, 255, 46, 0.22);
+}
+.rank-list > li:first-child {
+  background: linear-gradient(90deg, rgba(199, 255, 46, 0.18), transparent);
+}
+.rank-list > li:first-child .rank {
+  color: #799900;
+}
+.legend {
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.roster li.offline {
-  opacity: 0.5;
-}
-
-.tag {
-  font-size: 0.75rem;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 12px;
+  font-size: 8px;
   color: var(--muted);
+  margin-top: auto;
+}
+.lime-dot {
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  border-radius: 50%;
+  background: var(--lime);
+  border: 1px solid var(--ink);
 }
 
-.tag.ready {
-  color: var(--accent-2);
-}
-
-/* --- Round ---------------------------------------------------------------- */
-
-.countdown {
-  font-size: 3rem;
-  font-weight: 800;
-  text-align: center;
-  margin: 2rem 0;
-  color: var(--accent);
-}
-
-.timer {
-  height: 10px;
-  background: var(--panel-2);
-  border-radius: 999px;
+.stage {
+  position: relative;
   overflow: hidden;
+  background: var(--ink);
+  color: white;
+  min-height: 380px;
+  border: 1px solid #23262c;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 62px 16px 74px;
+  order: 1;
+}
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: radial-gradient(circle, black, transparent 76%);
 }
 
+.round-meta {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  z-index: 3;
+}
+.round-meta > div:first-child span {
+  display: block;
+  color: #777d86;
+  font: 800 8px Consolas, monospace;
+  letter-spacing: 1.5px;
+}
+.round-meta b {
+  font: 950 22px Arial;
+  color: var(--lime);
+}
+.timer {
+  text-align: right;
+  position: relative;
+}
+.timer b {
+  color: white;
+  font: 900 26px Consolas, monospace;
+}
+.timer small {
+  display: block;
+  font: 800 7px Consolas, monospace;
+  color: #777d86;
+}
+.timer.urgent b {
+  color: var(--orange);
+}
 .timer-fill {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, var(--accent-2), var(--accent));
-  /* No CSS transition on width: the bar is redrawn from the server's deadline
-     on every tick, and an animation would let it drift from that value. */
+  height: 3px;
+  background: var(--lime);
+  margin-top: 4px;
+  transition: width 120ms linear;
+}
+.timer.urgent .timer-fill {
+  background: var(--orange);
 }
 
-.timer-text {
-  margin: 0.35rem 0 1rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.timer.paused .timer-fill {
-  background: var(--muted);
-}
-
-.feedback {
-  min-height: 1.6rem;
-  font-weight: 600;
-}
-
-.feedback.ok {
-  color: var(--accent-2);
-}
-
-.feedback.no {
-  color: var(--danger);
-}
-
-.reveal-title {
-  font-size: 1.8rem;
-  font-weight: 800;
-  margin: 0.5rem 0 0;
-}
-
-/* --- Ranks ---------------------------------------------------------------- */
-
-.ranks {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.ranks li {
+.vinyl-stage {
+  position: relative;
+  width: min(320px, 82vw);
+  height: min(260px, 66vw);
   display: grid;
-  grid-template-columns: 2.5rem 1fr auto;
-  gap: 0.75rem;
-  padding: 0.45rem 0.6rem;
-  border-bottom: 1px solid var(--line);
+  place-items: center;
+}
+.vinyl {
+  width: min(180px, 46vw);
+  height: min(180px, 46vw);
+  border-radius: 50%;
+  position: relative;
+  background: repeating-radial-gradient(circle, #24272c 0 2px, #0e1013 3px 8px);
+  box-shadow: 0 0 0 1px #353941, 0 0 70px rgba(141, 105, 255, 0.2);
+  animation: spin 5s linear infinite;
+  z-index: 2;
+}
+.vinyl::before {
+  content: "";
+  position: absolute;
+  inset: 20px;
+  border: 1px solid #33373e;
+  border-radius: 50%;
+}
+.vinyl-label {
+  position: absolute;
+  inset: 28%;
+  background: var(--violet);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.vinyl-label i {
+  font-style: normal;
+  font-size: 20px;
+}
+.vinyl-label b {
+  font: 900 15px Consolas, monospace;
+}
+.paused .vinyl,
+.revealed .vinyl {
+  animation-play-state: paused;
+}
+.revealed .vinyl-label {
+  background: var(--lime);
+  color: var(--ink);
+}
+.orbit {
+  position: absolute;
+  border: 1px solid #30343b;
+  border-radius: 50%;
+}
+.orbit-one {
+  width: min(250px, 64vw);
+  height: min(250px, 64vw);
+}
+.orbit-two {
+  width: min(310px, 80vw);
+  height: min(200px, 50vw);
+  transform: rotate(-15deg);
+  border-color: rgba(141, 105, 255, 0.3);
+}
+.sound-pill {
+  position: absolute;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #191c21;
+  border: 1px solid #333740;
+  padding: 6px 12px;
+  z-index: 3;
+}
+.sound-pill b {
+  font-size: 9px;
+  color: #b9bdc4;
+}
+.equalizer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+}
+.equalizer i {
+  width: 2px;
+  height: 100%;
+  background: var(--lime);
+  animation: bounce 900ms ease-in-out infinite alternate;
+}
+.equalizer i:nth-child(3n) {
+  animation-delay: -400ms;
+}
+.equalizer i:nth-child(2n) {
+  animation-delay: -200ms;
 }
 
-.ranks li.you {
-  background: var(--panel);
-  border-radius: var(--radius);
+.question-copy,
+.answer-reveal {
+  z-index: 3;
+  text-align: center;
+  margin-top: 10px;
+}
+.genre-pill {
+  display: inline-block;
+  background: var(--lime);
+  color: var(--ink);
+  font: 900 8px Consolas, monospace;
+  padding: 6px 9px;
+  transform: rotate(-2deg);
+}
+.question-copy h2,
+.answer-reveal h2 {
+  font-size: clamp(20px, 5vw, 31px);
+  margin: 12px 0 5px;
+  letter-spacing: -1.2px;
+}
+.question-copy p,
+.answer-reveal p {
+  margin: 4px 0 0;
+  color: #7f858f;
+  font-size: 10px;
+}
+.answer-reveal > span {
+  color: var(--lime);
+  font: 800 8px Consolas, monospace;
+  letter-spacing: 2px;
+}
+.answer-reveal h2 {
+  font-size: clamp(26px, 7vw, 43px);
+}
+.answer-reveal .feedback {
+  margin-top: 14px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #353941;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  color: white;
+}
+.answer-reveal .feedback.ok {
+  border-color: var(--lime);
+  color: var(--lime);
 }
 
-.ranks .rank {
+.host-controls {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 14px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  background: #191c21;
+  border: 1px solid #333740;
+  padding: 5px;
+  gap: 4px;
+  max-width: calc(100% - 24px);
+}
+.host-controls > span {
+  padding: 0 10px 0 6px;
+  color: #777d86;
+  font: 800 7px Consolas, monospace;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.host-controls > span i {
+  width: 6px;
+  height: 6px;
+  background: var(--orange);
+  display: inline-block;
+  margin-right: 4px;
+}
+.host-controls button {
+  min-height: 32px;
+  border: 1px solid #3a3e46;
+  background: #25282e;
+  color: #ccd0d6;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 0 12px;
+}
+.host-controls button.skip {
+  background: var(--orange);
+  color: white;
+  border-color: var(--orange);
+}
+.host-controls button b {
+  margin-left: 8px;
+}
+
+/* 정답 입력 패널. 폰에서는 무대 바로 아래에 오는 것이 가장 중요합니다. */
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  order: 2;
+}
+.chat-notice {
+  margin: 12px 12px 0;
+  background: #f1efe8;
+  border-left: 3px solid var(--violet);
+  padding: 9px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.chat-notice b {
+  font: 900 7px Consolas, monospace;
+  background: var(--violet);
+  color: white;
+  padding: 3px 4px;
+  flex: 0 0 auto;
+}
+.chat-notice span {
+  font-size: 9px;
+  line-height: 1.45;
+  color: #666a71;
+}
+.chat-log {
+  padding: 10px 13px 0;
+  flex: 1;
+  min-height: 52px;
+}
+.feedback {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+.chat-log .feedback.ok {
+  background: var(--ink);
+  color: var(--lime);
+  padding: 10px;
+}
+.chat-log .feedback.no {
+  background: #f1efe8;
+  color: #575b62;
+  padding: 10px;
+}
+
+.answer-form {
+  border-top: 1px solid var(--line);
+  padding: 13px;
+}
+.answer-form label {
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.answer-form > div {
+  display: flex;
+  margin-top: 7px;
+}
+.answer-form input {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  border: 1px solid var(--ink);
+  padding: 0 10px;
+  outline: none;
+  /* 16px 미만이면 iOS 사파리가 입력할 때 화면을 확대해 버립니다. */
+  font-size: 16px;
+}
+.answer-form input:focus {
+  box-shadow: inset 0 -3px var(--lime);
+}
+.answer-form button {
+  border: 0;
+  background: var(--ink);
+  color: var(--lime);
+  font: 800 9px Consolas, monospace;
+  padding: 0 14px;
+  flex: 0 0 auto;
+}
+.answer-form > small {
+  display: block;
+  color: #999;
+  font-size: 9px;
+  margin-top: 7px;
+}
+
+/* --- 최종 결과 ------------------------------------------------------------ */
+
+.results {
+  padding: 32px 16px 60px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.result-head {
+  text-align: center;
+}
+.result-head p {
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  font: 700 9px Consolas, monospace;
+  letter-spacing: 1px;
 }
-
-.ranks .score {
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
 .podium {
   list-style: none;
+  margin: 22px 0 26px;
   padding: 0;
-  margin: 1rem 0 2rem;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
   align-items: end;
+  gap: 10px;
 }
-
-.podium li {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 1rem 0.5rem;
+.podium > li {
   text-align: center;
+  font-size: 12px;
+  font-weight: 900;
 }
-
-.podium li:nth-child(1) {
-  border-color: var(--accent);
-  padding-block: 2rem;
-}
-
-.podium .medal {
+.podium > li .score {
   display: block;
-  font-size: 1.5rem;
+  font: 950 15px Consolas, monospace;
+  margin: 4px 0 8px;
+}
+.podium > li .block {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ink);
+  background: #dfdcd4;
+  height: 60px;
+  font: italic 950 30px Arial;
+  color: rgba(13, 15, 18, 0.25);
+}
+.podium > li:nth-child(1) {
+  order: 2;
+}
+.podium > li:nth-child(1) .block {
+  height: 108px;
+  background: var(--lime);
+}
+.podium > li:nth-child(2) {
+  order: 1;
+}
+.podium > li:nth-child(2) .block {
+  height: 78px;
+}
+.podium > li:nth-child(3) {
+  order: 3;
+}
+.podium > li:nth-child(3) .block {
+  height: 52px;
+  background: #ffb386;
 }
 
-/* --- Toast ---------------------------------------------------------------- */
+.final-table {
+  max-width: 930px;
+  margin: 0 auto;
+}
+.table-body {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.table-body > li {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 16px;
+  border-bottom: 1px solid #ebe8e1;
+  font-size: 11px;
+  font-weight: 800;
+}
+.table-body > li .rank {
+  color: #a3a099;
+  font: 800 11px Consolas, monospace;
+}
+.table-body > li .score {
+  font: 900 11px Consolas, monospace;
+}
+.table-body > li.me {
+  background: rgba(199, 255, 46, 0.22);
+}
+.result-actions {
+  margin: 22px auto 0;
+  max-width: 930px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* --- 토스트 --------------------------------------------------------------- */
 
 .toast {
   position: fixed;
-  left: 50%;
-  bottom: 1.5rem;
-  transform: translateX(-50%);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.6rem 1rem;
-  margin: 0;
-  max-width: min(34rem, 90vw);
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  background: var(--ink);
+  color: white;
+  border-left: 4px solid var(--lime);
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.2);
+  padding: 13px 18px;
+  font-size: 11px;
+  font-weight: 800;
+  z-index: 100;
+  animation: toast-in 220ms ease-out;
 }
 
-@media (max-width: 34rem) {
-  .song-media {
-    grid-template-columns: 1fr;
-  }
+.page-enter {
+  animation: page-in 240ms ease-out;
+}
 
-  .podium {
-    grid-template-columns: 1fr;
+/*
+  방장 화면의 유튜브 플레이어.
+
+  `display: none` 도 `visibility: hidden` 도 아닌 이유: 브라우저는 렌더링되지
+  않는 요소의 재생을 거부하거나 지연시키는데, 이건 정확한 타이밍에 소리를
+  내야 합니다. 실제 크기로 렌더링하되 페이지 뒤에 두고 거의 투명하게 만들어,
+  빔프로젝터에 비쳐도 아무것도 보이지 않게 합니다. 영상과 그 제목이 곧
+  정답이므로 무엇도 드러나면 안 됩니다.
+*/
+#yt-stage {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  height: 180px;
+  opacity: 0.01;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes bounce {
+  from {
+    transform: scaleY(0.4);
+    opacity: 0.6;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+@keyframes toast-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+/* --- 넓은 화면. 여기서부터 방장의 앞 컴퓨터 레이아웃입니다. ---------------- */
+
+@media (min-width: 900px) {
+  .topbar {
+    min-height: 78px;
+    padding: 0 30px;
+  }
+  .lobby {
+    padding: 44px 34px 60px;
+  }
+  .lobby-grid {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+  .player-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .song-media {
+    grid-template-columns: 1fr 6rem 6rem;
+  }
+  .results {
+    padding: 52px 40px 70px;
+  }
+  .podium > li .block {
+    height: 80px;
+  }
+  .podium > li:nth-child(1) .block {
+    height: 130px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .game-layout {
+    grid-template-columns: 260px minmax(0, 1fr) 330px;
+    padding: 18px;
+  }
+  .scoreboard {
+    order: 1;
+  }
+  .stage {
+    order: 2;
+    min-height: 620px;
+    padding: 70px 20px 80px;
+  }
+  .chat-panel {
+    order: 3;
+  }
+  .scoreboard,
+  .chat-panel {
+    height: calc(100vh - 110px);
+    min-height: 620px;
+  }
+  .chat-log {
+    overflow: auto;
+  }
+  .vinyl-stage {
+    width: 390px;
+    height: 300px;
+  }
+  .vinyl {
+    width: 214px;
+    height: 214px;
+  }
+  .orbit-one {
+    width: 300px;
+    height: 300px;
+  }
+  .orbit-two {
+    width: 380px;
+    height: 240px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   게임 모드: 선택, 배지, 그리고 속담·사자성어 라운드의 단서 카드.
+
+   단서 카드는 노래 모드의 턴테이블과 같은 자리를 씁니다. 둘 중 하나만
+   화면에 있고, 어느 쪽인지는 서버가 알려 준 모드가 정합니다. 카드가
+   교실 뒤에서도 읽혀야 하므로 글자 크기는 화면 폭을 따라갑니다.
+   -------------------------------------------------------------------------- */
+
+.mode-select {
+  border: 1px solid var(--line);
+  margin: 12px 0 0;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+.mode-select legend {
+  font: 900 8px Consolas, monospace;
+  letter-spacing: 2px;
+  padding: 0 6px;
+}
+.mode-select label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "radio name" "radio hint";
+  gap: 0 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.mode-select label:hover {
+  border-color: var(--line);
+}
+.mode-select label:has(input:checked) {
+  border-color: var(--ink);
+  background: var(--white);
+}
+.mode-select input {
+  grid-area: radio;
+  accent-color: var(--violet);
+  margin: 0;
+}
+.mode-select b {
+  grid-area: name;
+  font-size: 13px;
+}
+.mode-select small {
+  grid-area: hint;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.mode-badge {
+  display: inline-block;
+  margin: 8px 0 0;
+  padding: 5px 10px;
+  background: var(--violet);
+  color: var(--white);
+  font: 800 10px Consolas, monospace;
+  letter-spacing: 1px;
+}
+.mode-badge:empty {
+  display: none;
+}
+
+.clue-card {
+  z-index: 3;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: min(560px, 88vw);
+  padding: clamp(18px, 5vw, 34px) clamp(16px, 4vw, 28px);
+  border: 1px solid #353941;
+  background: rgba(255, 254, 251, 0.04);
+  text-align: center;
+}
+.clue-countdown {
+  font: 900 clamp(28px, 9vw, 54px) Consolas, monospace;
+  color: var(--lime);
+  line-height: 1;
+}
+.clue-text {
+  margin: 0;
+  color: var(--white);
+  font-size: clamp(22px, 6.2vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  line-height: 1.35;
+  /* 속담은 길어서 폰 화면에서 줄이 바뀝니다. 단어 중간에서 끊기지 않게. */
+  word-break: keep-all;
+}
+.clue-card small {
+  color: #7f858f;
+  font-size: 10px;
+}
+
+/* 속담 정답: 화면에 있던 앞부분은 흐리게, 맞혀야 했던 뒷부분은 라임색으로. */
+#reveal-known {
+  color: #7f858f;
+  font-weight: 600;
+}
+#reveal-title {
+  color: var(--lime);
+}
+.reveal-title {
+  word-break: keep-all;
+}
+.answer-reveal .reveal-detail {
+  margin-top: 8px;
+  color: var(--white);
+  font-size: clamp(11px, 3vw, 14px);
+}
+.answer-reveal .reveal-detail:empty,
+.answer-reveal .feedback:empty {
+  display: none;
+}
+
+.reveal-scorers {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.reveal-scorers li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 1px solid #353941;
+  padding: 7px 11px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--white);
+}
+.reveal-scorers li.me {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+.reveal-scorers .place {
+  font: 900 9px Consolas, monospace;
+  color: var(--violet);
+}
+.reveal-scorers li.me .place {
+  color: var(--lime);
+}
+.reveal-scorers .score {
+  color: var(--lime);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }

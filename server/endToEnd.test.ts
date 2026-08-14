@@ -15,7 +15,9 @@ import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { startServer } from './index.ts';
 import { acceptKey, decodeFrame, encodeFrame } from './websocket.ts';
+import { PROVERB_BANK } from './questionBanks.ts';
 import type { ServerMessage } from './protocol.ts';
+import { QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
 import type { RawSongRecord } from '../shared/songCatalog.ts';
 
 const SONGS: RawSongRecord[] = [
@@ -167,6 +169,7 @@ test('two clients play a full round over real sockets', async () => {
 
     // The countdown is a real server timer; both clients must see the round.
     const start = await guest.waitFor('ROUND_START', 6_000);
+    assert.equal(start.question.mode, 'song');
     assert.equal(start.mediaUrl, 'https://media.invalid/a1');
     assert.equal(JSON.stringify(start).includes('Dynamite'), false);
 
@@ -176,22 +179,104 @@ test('two clients play a full round over real sockets', async () => {
     assert.equal(host.countOf('ANSWER_REJECTED'), 0);
 
     guest.send({ type: 'SUBMIT_ANSWER', guess: '다이나 마이트' });
-    await guest.waitFor('ANSWER_ACCEPTED');
+    const accepted = await guest.waitFor('ANSWER_ACCEPTED');
+    assert.equal(accepted.place, 1);
+    assert.equal(accepted.pointsAwarded, 1);
 
+    // A song round has one scoring place, so that answer ends it.
     const reveal = await host.waitFor('ROUND_REVEAL');
+    assert.equal(reveal.answer.answer, 'Dynamite');
     assert.equal(reveal.song.title, 'Dynamite');
     assert.equal(reveal.winner?.nickname, '참가자');
+    assert.deepEqual(
+      reveal.scorers.map((entry) => [entry.place, entry.pointsAwarded]),
+      [[1, 1]],
+    );
 
     // Per-recipient leaderboard payloads.
     const hostUpdate = await host.waitFor('LEADERBOARD_UPDATE');
     const guestUpdate = await guest.waitFor('LEADERBOARD_UPDATE');
     assert.equal(hostUpdate.you.score, 0);
-    assert.equal(guestUpdate.you.score, 100);
+    assert.equal(guestUpdate.you.score, 1);
     assert.equal(guestUpdate.you.rank, 1);
 
     // One song only, so the reveal timer ends the game.
     const over = await host.waitFor('GAME_OVER', 8_000);
     assert.equal(over.finalRanks.length, 2);
+
+    host.close();
+    guest.close();
+  });
+});
+
+test('a proverb room plays over real sockets without the answer ever crossing the wire', async () => {
+  await withServer(async ({ port, game }) => {
+    const { room, mode, questionCount } = game.createRoom({ mode: 'proverb' });
+    assert.equal(mode, 'proverb');
+    assert.equal(questionCount, QUESTIONS_PER_TEXT_GAME);
+
+    const host = await TestClient.connect(port);
+    host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장' });
+    const hostState = await host.waitFor('ROOM_STATE');
+    assert.equal(hostState.mode, 'proverb');
+    assert.equal(hostState.totalQuestions, QUESTIONS_PER_TEXT_GAME);
+
+    const guest = await TestClient.connect(port);
+    guest.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '참가자' });
+    await guest.waitFor('ROOM_STATE');
+    await host.waitFor('PLAYER_JOINED');
+
+    host.send({ type: 'HOST_START', hostToken: room.hostToken });
+    const start = await guest.waitFor('ROUND_START', 6_000);
+
+    assert.equal(start.question.mode, 'proverb');
+    assert.equal(start.question.index, 0);
+    assert.equal(start.question.totalQuestions, QUESTIONS_PER_TEXT_GAME);
+    assert.ok((start.question.clue ?? '').length > 0, 'the prefix has to be on screen');
+    assert.equal(start.mediaUrl, '', 'a text round needs no media URL');
+    assert.equal(start.livePlayback, false);
+    assert.equal(guest.countOf('ROUND_CUE'), 0);
+    assert.equal(host.countOf('ROUND_CUE'), 0, 'a text round has nothing to cue');
+
+    // Which question was drawn is random, so the answer is looked up by clue.
+    const question = PROVERB_BANK.find(
+      (candidate) => candidate.mode === 'proverb' && candidate.prefix === start.question.clue,
+    );
+    assert.ok(question !== undefined && question.mode === 'proverb');
+
+    // Nothing sent so far names any answer in the bank.
+    const seen = JSON.stringify([...host.received, ...guest.received]);
+    for (const alias of question.aliases) {
+      assert.equal(seen.includes(alias), false, `"${alias}" reached a client before the reveal`);
+    }
+
+    guest.send({ type: 'SUBMIT_ANSWER', guess: '전혀 다른 말' });
+    await guest.waitFor('ANSWER_REJECTED');
+
+    // The missing half alone is a correct answer.
+    guest.send({ type: 'SUBMIT_ANSWER', guess: question.suffix });
+    const accepted = await guest.waitFor('ANSWER_ACCEPTED');
+    assert.equal(accepted.place, 1);
+    assert.equal(accepted.pointsAwarded, 1);
+
+    // The whole proverb is a correct answer too, from a different player.
+    host.send({ type: 'SUBMIT_ANSWER', guess: question.full });
+    const second = await host.waitFor('ANSWER_ACCEPTED');
+    assert.equal(second.place, 2);
+    assert.equal(second.pointsAwarded, 1);
+
+    // Two of three places taken, so the deadline is what ends this round.
+    const reveal = await guest.waitFor('ROUND_REVEAL', 40_000);
+    assert.equal(reveal.answer.mode, 'proverb');
+    assert.equal(reveal.answer.answer, question.full);
+    assert.equal(reveal.answer.detail, question.suffix);
+    assert.deepEqual(
+      reveal.scorers.map((entry) => [entry.place, entry.pointsAwarded]),
+      [
+        [1, 1],
+        [2, 1],
+      ],
+    );
 
     host.close();
     guest.close();

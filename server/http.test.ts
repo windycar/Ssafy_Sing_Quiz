@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { startServer, selectSongs } from './index.ts';
 import { createRateLimiter, isSafeMediaUrl, parseCreateRoomRequest } from './http.ts';
+import { IDIOM_BANK, PROVERB_BANK } from './questionBanks.ts';
+import { QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
 import type { RawSongRecord, SongConfig } from '../shared/songCatalog.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -99,6 +101,41 @@ test('parseCreateRoomRequest rejects every malformed shape', () => {
 
   // An absent body means "all defaults", not an error.
   assert.equal(parseCreateRoomRequest(null).ok, true);
+});
+
+test('a YouTube registration needs no media URL and no clip range', () => {
+  const parsed = parseCreateRoomRequest({
+    media: [{ id: 'song-1', youtubeId: 'dQw4w9WgXcQ', youtubeStart: 45 }],
+  });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.ok ? parsed.value.media?.[0]?.youtubeId : null, 'dQw4w9WgXcQ');
+  assert.equal(parsed.ok ? parsed.value.media?.[0]?.youtubeStart : null, 45);
+});
+
+test('a pasted YouTube URL is reduced to its video id', () => {
+  // The host UI sends whatever was in the box; the id is what gets stored.
+  const parsed = parseCreateRoomRequest({
+    media: [{ id: 'song-1', youtubeId: 'https://youtu.be/dQw4w9WgXcQ?t=90' }],
+  });
+  assert.equal(parsed.ok ? parsed.value.media?.[0]?.youtubeId : null, 'dQw4w9WgXcQ');
+});
+
+test('a YouTube registration with a junk id is refused', () => {
+  // Note "not-a-video" is absent on purpose: it is 11 characters of the video
+  // id alphabet, so it is a well-formed id. Only YouTube can say whether an
+  // id exists, and that check belongs to the lookup route, not to parsing.
+  const rejected: unknown[] = [
+    { media: [{ id: 'a', youtubeId: 'too-short' }] },
+    { media: [{ id: 'a', youtubeId: 'way-too-long-for-an-id' }] },
+    { media: [{ id: 'a', youtubeId: 'has spaces' }] },
+    { media: [{ id: 'a', youtubeId: 'https://vimeo.com/12345' }] },
+    { media: [{ id: 'a', youtubeId: 42 }] },
+    { media: [{ id: 'a', youtubeId: 'dQw4w9WgXcQ', youtubeStart: -5 }] },
+    { media: [{ id: 'a', youtubeId: 'dQw4w9WgXcQ', youtubeStart: 'soon' }] },
+  ];
+  for (const body of rejected) {
+    assert.equal(parseCreateRoomRequest(body).ok, false, `should have rejected ${JSON.stringify(body)}`);
+  }
 });
 
 test('createRateLimiter allows a burst up to the limit and then refuses', () => {
@@ -215,7 +252,7 @@ test('a room with nothing playable is created anyway, so its host can fix it', a
       // refusing creation here would leave them with no way forward.
       const { roomId } = await createRoom(base);
       const room = game.getRoom(roomId);
-      assert.equal(room?.getSongCount(), 0);
+      assert.equal(room?.getQuestionCount(), 0);
 
       const lookup = (await (await fetch(`${base}/api/rooms/${roomId}`)).json()) as { ready: boolean };
       assert.equal(lookup.ready, false, 'a joining player can see the room is not configured yet');
@@ -226,6 +263,113 @@ test('a room with nothing playable is created anyway, so its host can fix it', a
     },
     { songs: [SONGS[1] as RawSongRecord] },
   );
+});
+
+// --- Game modes -------------------------------------------------------------
+
+test('parseCreateRoomRequest accepts the three modes and refuses anything else', () => {
+  for (const mode of ['song', 'proverb', 'idiom']) {
+    const parsed = parseCreateRoomRequest({ mode });
+    assert.equal(parsed.ok, true, `should have accepted ${mode}`);
+    assert.equal(parsed.ok ? parsed.value.mode : null, mode);
+  }
+  // Rejected rather than defaulted: a host who asked for a mode this build does
+  // not have should be told, not quietly given the song game.
+  for (const mode of ['', 'SONG', 'proverbs', 'quiz', 42, null, ['song']]) {
+    assert.equal(parseCreateRoomRequest({ mode }).ok, false, `should have refused ${JSON.stringify(mode)}`);
+  }
+  // Omitting it is not an error; it means the original game.
+  assert.equal(parseCreateRoomRequest({}).ok, true);
+});
+
+test('creating a room in each mode records that mode and draws its questions', async () => {
+  await withServer(async ({ base, game }) => {
+    for (const mode of ['song', 'proverb', 'idiom'] as const) {
+      const response = await fetch(`${base}/api/rooms`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(mode === 'song' ? { mode, songCount: 1 } : { mode }),
+      });
+      assert.equal(response.status, 201);
+      const body = (await response.json()) as { roomId: string; mode: string; questionCount: number };
+
+      assert.equal(body.mode, mode);
+      assert.equal(body.questionCount, mode === 'song' ? 1 : QUESTIONS_PER_TEXT_GAME);
+
+      // The room itself holds the mode, not just the response body.
+      const room = game.getRoom(body.roomId);
+      assert.equal(room?.getMode(), mode);
+      assert.equal(room?.getQuestionCount(), mode === 'song' ? 1 : QUESTIONS_PER_TEXT_GAME);
+
+      // And a joining player can read it without a host token.
+      const lookup = (await (await fetch(`${base}/api/rooms/${body.roomId}`)).json()) as {
+        mode: string;
+        ready: boolean;
+      };
+      assert.equal(lookup.mode, mode);
+      assert.equal(lookup.ready, true);
+    }
+  });
+});
+
+test('a text room needs no media registration and no song catalog', async () => {
+  // The song catalog here is empty of playable songs on purpose: a proverb room
+  // must be ready to start regardless.
+  await withServer(
+    async ({ base, game }) => {
+      const { roomId } = await createRoom(base, { mode: 'idiom' });
+      const room = game.getRoom(roomId);
+      assert.equal(room?.getQuestionCount(), QUESTIONS_PER_TEXT_GAME);
+
+      room?.handleMessage({ type: 'JOIN_ROOM', roomId, nickname: '방장' }, null, 0);
+      const started = room?.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 0);
+      assert.equal(
+        started?.some((effect) => effect.kind === 'broadcast' && effect.message.type === 'COUNTDOWN_STARTED'),
+        true,
+        'a text room starts with no playable songs at all',
+      );
+    },
+    { songs: [SONGS[1] as RawSongRecord] },
+  );
+});
+
+test('a room creation response never contains an answer, in any mode', async () => {
+  await withServer(async ({ base }) => {
+    for (const mode of ['proverb', 'idiom'] as const) {
+      const response = await fetch(`${base}/api/rooms`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      const text = await response.text();
+      const bank = mode === 'proverb' ? PROVERB_BANK : IDIOM_BANK;
+      for (const question of bank) {
+        for (const alias of question.aliases) {
+          assert.equal(text.includes(alias), false, `${mode}: "${alias}" reached a client`);
+        }
+      }
+    }
+  });
+});
+
+test('the host may change the mode while the room is still in the lobby', async () => {
+  await withServer(async ({ base, game }) => {
+    const { roomId, hostToken } = await createRoom(base, { mode: 'song', songCount: 1 });
+    assert.equal(game.getRoom(roomId)?.getMode(), 'song');
+
+    const response = await fetch(`${base}/api/rooms/${roomId}/songs`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-host-token': hostToken },
+      body: JSON.stringify({ mode: 'proverb' }),
+    });
+    assert.equal(response.status, 200);
+
+    const body = (await response.json()) as { mode: string; questionCount: number };
+    assert.equal(body.mode, 'proverb');
+    assert.equal(body.questionCount, QUESTIONS_PER_TEXT_GAME);
+    assert.equal(game.getRoom(roomId)?.getMode(), 'proverb');
+    assert.equal(game.getRoom(roomId)?.getQuestionCount(), QUESTIONS_PER_TEXT_GAME);
+  });
 });
 
 test('the setlist is frozen once the game starts', async () => {
@@ -288,9 +432,12 @@ test('GET /api/rooms/:id tells a join screen only whether the code is usable', a
 
     const found = await fetch(`${base}/api/rooms/${room.roomId}`);
     assert.equal(found.status, 200);
+    // Everything a join screen needs, and nothing else. `mode` is safe: which
+    // game is being played is not an answer to any of its questions.
     assert.deepEqual(await found.json(), {
       roomId: room.roomId,
       phase: 'LOBBY',
+      mode: 'song',
       playerCount: 0,
       joinable: true,
       ready: true,
@@ -406,6 +553,42 @@ test('shared/ is reachable from the client so both judge by the same rules', asy
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type') ?? '', /text\/javascript/u);
       assert.equal((await response.text()).includes('interface AliasMatcher'), false);
+    },
+    { serveClient: true },
+  );
+});
+
+test('the question model is served but the question banks are not', async () => {
+  // `shared/questions.ts` is mounted, because both clients import the mode
+  // labels from it. That is only safe because the answers are not in it — they
+  // are in `data/`, which is not mounted at all and whose extension is not even
+  // in the allow-list. Both halves of that are asserted here.
+  await withServer(
+    async ({ base }) => {
+      const model = await fetch(`${base}/shared/questions.ts`);
+      assert.equal(model.status, 200);
+      const source = await model.text();
+      assert.ok(source.includes('노래 맞히기'), 'the client reads its mode labels from here');
+
+      for (const question of [...PROVERB_BANK, ...IDIOM_BANK]) {
+        for (const alias of question.aliases) {
+          assert.equal(source.includes(alias), false, `"${alias}" is in a file the browser can fetch`);
+        }
+      }
+
+      // And the data itself is unreachable, by every spelling worth trying.
+      for (const path of [
+        '/data/proverbs.json',
+        '/shared/../data/idioms.json',
+        '/shared/%2e%2e/data/idioms.json',
+        '/proverbs.json',
+        '/../data/proverbs.json',
+      ]) {
+        const response = await fetch(`${base}${path}`);
+        assert.equal(response.status, 404, `${path} must not be served`);
+        const body = await response.text();
+        assert.equal(body.includes('가는 말이'), false);
+      }
     },
     { serveClient: true },
   );

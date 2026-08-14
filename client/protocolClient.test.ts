@@ -25,12 +25,33 @@ import type { RawSongRecord } from '../shared/songCatalog.ts';
 
 const roundStart: ServerMessage = {
   type: 'ROUND_START',
+  question: { mode: 'song', index: 0, totalQuestions: 3, durationMs: 20_000, clue: null },
   song: { index: 0, totalSongs: 3, clipDurationMs: 10_000 },
   mediaUrl: 'https://media.invalid/clip',
   clipStartMs: 30_000,
   clipEndMs: 40_000,
+  livePlayback: false,
   serverStartedAt: 1_000,
   deadline: 21_000,
+};
+
+/** A proverb round: the prefix is on the wire, the rest of the saying is not. */
+const proverbStart: ServerMessage = {
+  type: 'ROUND_START',
+  question: {
+    mode: 'proverb',
+    index: 4,
+    totalQuestions: 30,
+    durationMs: 30_000,
+    clue: '가는 말이 고와야',
+  },
+  song: { index: 4, totalSongs: 30, clipDurationMs: 30_000 },
+  mediaUrl: '',
+  clipStartMs: 0,
+  clipEndMs: 0,
+  livePlayback: false,
+  serverStartedAt: 1_000,
+  deadline: 31_000,
 };
 
 function player(id: string, overrides: Partial<PlayerSummary> = {}): PlayerSummary {
@@ -47,11 +68,34 @@ test('ROUND_START carries a clip but never an answer', () => {
   const state = reduce([roundStart]);
 
   assert.equal(state.phase, 'IN_ROUND');
+  assert.equal(state.mode, 'song');
+  assert.equal(state.round?.question.clue, null, 'a song round has no text clue');
   assert.equal(state.round?.mediaUrl, 'https://media.invalid/clip');
   assert.equal(state.reveal, null, 'nothing about the song is known before REVEAL');
   assert.equal(state.answeredThisRound, false);
   // The message type itself has no field that could hold one.
   assert.equal(Object.keys(roundStart).includes('title'), false);
+});
+
+test('a text ROUND_START carries the clue, the progress, and nothing else', () => {
+  const state = reduce([proverbStart]);
+
+  assert.equal(state.phase, 'IN_ROUND');
+  assert.equal(state.mode, 'proverb', 'the mode is taken from the round, not guessed');
+  assert.equal(state.totalQuestions, 30);
+  assert.equal(state.round?.question.clue, '가는 말이 고와야');
+  assert.equal(state.round?.question.index, 4, 'the client renders 5 / 30 from this');
+  assert.equal(state.round?.deadline, 31_000);
+
+  // No media to play, in either of the two ways a client might try.
+  assert.equal(state.round?.mediaUrl, '');
+  assert.equal(state.round?.livePlayback, false);
+  assert.equal(state.round?.cue, null);
+  assert.equal(state.reveal, null);
+
+  // And nothing that answers it. There is no field on the message that could
+  // hold the missing half.
+  assert.equal(JSON.stringify(state).includes('오는 말이 곱다'), false);
 });
 
 test('the clock offset keeps the fastest sample rather than the latest', () => {
@@ -74,10 +118,17 @@ test('answer feedback is private and a late guess carries no verdict', () => {
     guess: '틀린답',
   });
 
-  assert.deepEqual(reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 100 }]).answerFeedback, {
-    kind: 'accepted',
-    pointsAwarded: 100,
-  });
+  assert.deepEqual(
+    reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 1, place: 1 }]).answerFeedback,
+    { kind: 'accepted', pointsAwarded: 1, place: 1 },
+  );
+
+  // The reducer reports whatever the server awarded rather than assuming the
+  // current one-point rule, so a scoring change needs no client release.
+  assert.deepEqual(
+    reduce([roundStart, { type: 'ANSWER_ACCEPTED', pointsAwarded: 50, place: 2 }]).answerFeedback,
+    { kind: 'accepted', pointsAwarded: 50, place: 2 },
+  );
 
   // Crucially there is no "you were right but slow" state to render.
   assert.deepEqual(reduce([roundStart, { type: 'ANSWER_TOO_LATE' }]).answerFeedback, { kind: 'tooLate' });
@@ -91,8 +142,18 @@ test('ROUND_REVEAL is the first message that names the song, and it syncs scores
     roundStart,
     {
       type: 'ROUND_REVEAL',
+      answer: {
+        mode: 'song',
+        answer: '좋은 날',
+        artist: '아이유',
+        detail: null,
+        clue: null,
+        hanja: null,
+        explanation: null,
+      },
       song: { title: '좋은 날', artist: '아이유' },
       winner: { playerId: 'p1', nickname: 'p1' },
+      scorers: [{ playerId: 'p1', nickname: 'p1', place: 1, pointsAwarded: 100 }],
       leaderboard: [
         { playerId: 'p1', nickname: 'p1', score: 100, rank: 1 },
         { playerId: 'p2', nickname: 'p2', score: 0, rank: 2 },
@@ -101,18 +162,104 @@ test('ROUND_REVEAL is the first message that names the song, and it syncs scores
   ]);
 
   assert.equal(state.phase, 'REVEAL');
-  assert.equal(state.reveal?.title, '좋은 날');
+  assert.equal(state.reveal?.answer.answer, '좋은 날');
+  assert.equal(state.reveal?.answer.artist, '아이유');
   assert.equal(state.reveal?.winner?.playerId, 'p1');
   // The roster and the leaderboard must not disagree about a score.
   assert.equal(state.players.find((entry) => entry.id === 'p1')?.score, 100);
+});
+
+test('a text ROUND_REVEAL carries every part a client has to draw', () => {
+  const state = reduce([
+    { type: 'PLAYER_JOINED', player: player('p1') },
+    { type: 'PLAYER_JOINED', player: player('p2') },
+    { type: 'PLAYER_JOINED', player: player('p3') },
+    proverbStart,
+    {
+      type: 'ROUND_REVEAL',
+      answer: {
+        mode: 'proverb',
+        answer: '가는 말이 고와야 오는 말이 곱다',
+        artist: null,
+        detail: '오는 말이 곱다',
+        clue: '가는 말이 고와야',
+        hanja: null,
+        explanation: '내가 좋게 말해야 상대도 좋게 대한다.',
+      },
+      song: { title: '가는 말이 고와야 오는 말이 곱다', artist: '' },
+      winner: { playerId: 'p1', nickname: 'p1' },
+      // Three scorers, in the order the server received them. The point values
+      // here are deliberately *not* the ones the server currently awards: the
+      // client has to render whatever it is told, so a fixture that matched
+      // `POINTS_BY_PLACE` would pass even if this file hardcoded them.
+      scorers: [
+        { playerId: 'p1', nickname: 'p1', place: 1, pointsAwarded: 100 },
+        { playerId: 'p2', nickname: 'p2', place: 2, pointsAwarded: 50 },
+        { playerId: 'p3', nickname: 'p3', place: 3, pointsAwarded: 30 },
+      ],
+      leaderboard: [
+        { playerId: 'p1', nickname: 'p1', score: 100, rank: 1 },
+        { playerId: 'p2', nickname: 'p2', score: 50, rank: 2 },
+        { playerId: 'p3', nickname: 'p3', score: 30, rank: 3 },
+      ],
+    },
+  ]);
+
+  assert.equal(state.phase, 'REVEAL');
+  // The prefix and the suffix arrive separately, which is what lets a UI show
+  // which half players actually had to supply.
+  assert.equal(state.reveal?.answer.clue, '가는 말이 고와야');
+  assert.equal(state.reveal?.answer.detail, '오는 말이 곱다');
+  assert.equal(state.reveal?.answer.answer, '가는 말이 고와야 오는 말이 곱다');
+  assert.equal(state.reveal?.answer.explanation, '내가 좋게 말해야 상대도 좋게 대한다.');
+
+  assert.deepEqual(
+    state.reveal?.scorers.map((entry) => [entry.place, entry.pointsAwarded]),
+    [
+      [1, 100],
+      [2, 50],
+      [3, 30],
+    ],
+  );
+  assert.deepEqual(
+    state.players.map((entry) => entry.score),
+    [100, 50, 30],
+  );
+});
+
+test('an idiom reveal carries the Hanja and the meaning', () => {
+  const state = reduce([
+    {
+      type: 'ROUND_REVEAL',
+      answer: {
+        mode: 'idiom',
+        answer: '고진감래',
+        artist: null,
+        detail: '힘든 시기가 지나면 좋은 날이 옴',
+        clue: null,
+        hanja: '苦盡甘來',
+        explanation: null,
+      },
+      song: { title: '고진감래', artist: '' },
+      winner: null,
+      scorers: [],
+      leaderboard: [],
+    },
+  ]);
+
+  assert.equal(state.reveal?.answer.hanja, '苦盡甘來');
+  assert.equal(state.reveal?.answer.detail, '힘든 시기가 지나면 좋은 날이 옴');
+  assert.deepEqual(state.reveal?.scorers, [], 'a round nobody got has no scorers to draw');
 });
 
 test('LEADERBOARD_UPDATE sets this player standing without replacing the board', () => {
   const state = reduce([
     {
       type: 'ROUND_REVEAL',
+      answer: { mode: 'song', answer: 't', artist: 'a', detail: null, clue: null, hanja: null, explanation: null },
       song: { title: 't', artist: 'a' },
       winner: null,
+      scorers: [],
       leaderboard: [{ playerId: 'p1', nickname: 'p1', score: 100, rank: 1 }],
     },
     {
@@ -148,6 +295,8 @@ test('a ROOM_STATE snapshot restores a round already in progress', () => {
     {
       type: 'ROOM_STATE',
       phase: 'IN_ROUND',
+      mode: 'song',
+      totalQuestions: 3,
       players: [player('p1')],
       isHost: true,
       playerToken: 'token',
@@ -155,6 +304,7 @@ test('a ROOM_STATE snapshot restores a round already in progress', () => {
       leaderboard: [{ playerId: 'p1', nickname: 'p1', score: 100, rank: 1 }],
       answeredThisRound: true,
       round: {
+        question: { mode: 'song', index: 1, totalQuestions: 3, durationMs: 20_000, clue: null },
         song: { index: 1, totalSongs: 3, clipDurationMs: 10_000 },
         mediaUrl: 'https://media.invalid/clip',
         clipStartMs: 0,
@@ -163,6 +313,7 @@ test('a ROOM_STATE snapshot restores a round already in progress', () => {
         deadline: 21_000,
         paused: false,
         pausedAt: null,
+        livePlayback: false,
       },
     },
   ]);
@@ -321,6 +472,8 @@ function harness(options: { playerToken?: string | null } = {}): {
 const snapshot = (token: string): ServerMessage => ({
   type: 'ROOM_STATE',
   phase: 'LOBBY',
+  mode: 'song',
+  totalQuestions: 0,
   players: [],
   isHost: true,
   playerToken: token,
@@ -513,16 +666,23 @@ test('a host and a player play a full game through the real client', async () =>
     // The alias expansion in shared/songCatalog.ts is what makes the spaced
     // form win here, and the server is the only thing that judged it.
     guest.submitAnswer('좋은 날');
-    await waitUntil(guest, (state) => state.answerFeedback.kind === 'accepted', 'the win');
+    const scored = await waitUntil(guest, (state) => state.answerFeedback.kind === 'accepted', 'the win');
+    assert.deepEqual(scored.answerFeedback, { kind: 'accepted', place: 1, pointsAwarded: 1 });
 
+    // A song round has one scoring place, so that answer ends it.
     const revealed = await waitUntil(host, (state) => state.reveal !== null, 'the reveal');
-    assert.equal(revealed.reveal?.title, '좋은 날');
+    assert.equal(revealed.reveal?.answer.answer, '좋은 날');
+    assert.equal(revealed.reveal?.answer.artist, '아이유');
     assert.equal(revealed.reveal?.winner?.nickname, '참가자');
+    assert.deepEqual(
+      revealed.reveal?.scorers.map((entry) => [entry.place, entry.nickname, entry.pointsAwarded]),
+      [[1, '참가자', 1]],
+    );
 
     const final = await waitUntil(host, (state) => state.phase === 'FINISHED', 'the game to end');
     assert.equal(final.finalRanks?.length, 2);
     assert.equal(final.finalRanks?.[0]?.nickname, '참가자');
-    assert.equal(final.finalRanks?.[0]?.score, 100);
+    assert.equal(final.finalRanks?.[0]?.score, 1);
   } finally {
     host.disconnect();
     guest.disconnect();

@@ -25,11 +25,15 @@
 import type {
   ClientMessage,
   ErrorReason,
+  GameMode,
   LeaderboardEntry,
   PlayerId,
   PlayerSummary,
   PlayerToken,
+  QuestionPublicInfo,
+  QuestionRevealInfo,
   RoomPhase,
+  RoundScorer,
   ServerMessage,
   SongPublicInfo,
 } from '../server/protocol.ts';
@@ -65,6 +69,12 @@ const defaultSocketFactory: SocketFactory = (url) => new WebSocket(url) as unkno
 export type ConnectionStatus = 'idle' | 'connecting' | 'joined' | 'reconnecting' | 'closed';
 
 export interface RoundView {
+  /**
+   * What this round asks: mode, position, total, and — in a text mode — the
+   * proverb prefix or idiom meaning to put on screen. Never the answer.
+   */
+  question: QuestionPublicInfo;
+  /** Superseded by `question`; kept because it is what older UI code reads. */
   song: SongPublicInfo;
   mediaUrl: string;
   clipStartMs: number;
@@ -73,24 +83,41 @@ export interface RoundView {
   deadline: number;
   paused: boolean;
   pausedAt: number | null;
+  /** The host plays this one in the room; nobody else plays anything. */
+  livePlayback: boolean;
+  /**
+   * What to play, and only ever set on the host's own client — the server
+   * sends `ROUND_CUE` to the host alone. A player's copy stays null, which is
+   * why a UI can read it without checking who it is rendering for.
+   */
+  cue: { youtubeId: string; startMs: number; playMs: number } | null;
 }
 
 export interface RevealView {
-  title: string;
-  artist: string;
+  /**
+   * The answer in whichever shape this mode has one. The first moment any of
+   * it exists on a client.
+   */
+  answer: QuestionRevealInfo;
   winner: { playerId: PlayerId; nickname: string } | null;
+  /** Everyone who scored, first to last. Empty when nobody got it. */
+  scorers: RoundScorer[];
 }
 
 /** The verdict on this player's own guess. Never says anything about others. */
 export type AnswerFeedback =
   | { kind: 'none' }
-  | { kind: 'accepted'; pointsAwarded: number }
+  | { kind: 'accepted'; pointsAwarded: number; place: number }
   | { kind: 'rejected'; guess: string }
   | { kind: 'tooLate' };
 
 export interface ClientState {
   status: ConnectionStatus;
   phase: RoomPhase;
+  /** What this room plays. Known from the first `ROOM_STATE`, before any round. */
+  mode: GameMode;
+  /** How many questions the room will play in total. */
+  totalQuestions: number;
   roomId: string | null;
   playerId: PlayerId | null;
   isHost: boolean;
@@ -116,6 +143,10 @@ export function initialState(roomId: string | null = null): ClientState {
   return {
     status: 'idle',
     phase: 'LOBBY',
+    // A guess until the first ROOM_STATE says otherwise. The song game is the
+    // one a client that never hears back would have been showing anyway.
+    mode: 'song',
+    totalQuestions: 0,
     roomId,
     playerId: null,
     isHost: false,
@@ -168,6 +199,7 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         message.round === undefined
           ? null
           : {
+              question: message.round.question,
               song: message.round.song,
               mediaUrl: message.round.mediaUrl,
               clipStartMs: message.round.clipStartMs,
@@ -176,11 +208,17 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
               deadline: message.round.deadline,
               paused: message.round.paused,
               pausedAt: message.round.pausedAt,
+              livePlayback: message.round.livePlayback,
+              // A host reconnecting mid-round gets its ROUND_CUE right after
+              // this snapshot; a player never gets one.
+              cue: state.round?.cue ?? null,
             };
       return {
         ...state,
         status: 'joined',
         phase: message.phase,
+        mode: message.mode,
+        totalQuestions: message.totalQuestions,
         playerId: message.playerId,
         isHost: message.isHost,
         players: message.players,
@@ -225,8 +263,11 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         ...state,
         phase: 'IN_ROUND',
         countdownStartsAt: null,
+        mode: message.question.mode,
+        totalQuestions: message.question.totalQuestions,
         clockOffsetMs: sampleClock(state, message.serverStartedAt, receivedAt),
         round: {
+          question: message.question,
           song: message.song,
           mediaUrl: message.mediaUrl,
           clipStartMs: message.clipStartMs,
@@ -235,11 +276,27 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
           deadline: message.deadline,
           paused: false,
           pausedAt: null,
+          livePlayback: message.livePlayback,
+          // ROUND_CUE arrives separately, and only for the host.
+          cue: null,
         },
         reveal: null,
         answerFeedback: { kind: 'none' },
         answeredThisRound: false,
       };
+
+    case 'ROUND_CUE':
+      // Ignored when no round is open: a cue without its ROUND_START would
+      // point at a video the client has no deadline for.
+      return state.round === null
+        ? state
+        : {
+            ...state,
+            round: {
+              ...state.round,
+              cue: { youtubeId: message.youtubeId, startMs: message.startMs, playMs: message.playMs },
+            },
+          };
 
     case 'ROUND_PAUSED':
       return {
@@ -259,7 +316,7 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
     case 'ANSWER_ACCEPTED':
       return {
         ...state,
-        answerFeedback: { kind: 'accepted', pointsAwarded: message.pointsAwarded },
+        answerFeedback: { kind: 'accepted', pointsAwarded: message.pointsAwarded, place: message.place },
         answeredThisRound: true,
       };
 
@@ -274,7 +331,11 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
       return {
         ...state,
         phase: 'REVEAL',
-        reveal: { title: message.song.title, artist: message.song.artist, winner: message.winner },
+        reveal: {
+          answer: message.answer,
+          winner: message.winner,
+          scorers: message.scorers,
+        },
         leaderboard: message.leaderboard,
         // Keep the roster's scores in step with the leaderboard so a caller can
         // render either one without them disagreeing.

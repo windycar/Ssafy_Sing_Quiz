@@ -1,10 +1,22 @@
-# Real-time protocol — Korean song-guessing game
+# Real-time protocol — Korean quiz game
 
 Companion to [`claude-analysis.md`](./claude-analysis.md). This document
 defines the concrete WebSocket message shapes and the server's deterministic
 state-transition rules, precisely enough to implement without further design
 decisions. Types are illustrative TypeScript — the implementing agent may
 adapt naming/module layout but should preserve the fields and semantics.
+
+**Modes.** A room plays one of `song | proverb | idiom`, fixed before
+`HOST_START` and reported on every `ROOM_STATE`. The three differ only in what
+the clue is, how long a round lasts, and how many players may score it; every
+rule below — authority, reconnect, pause accounting, ranking — is identical in
+all three. The implementation reflects that: one engine, one `Question` type
+(`shared/questions.ts`), and one redacting function per direction.
+
+The `song`-named fields (`SongPublicInfo`, `ROUND_START.song`,
+`ROUND_REVEAL.song`) predate the other two modes. They are still populated in
+every mode so an older client keeps working, but the mode-neutral `question`
+and `answer` fields are the ones to read.
 
 All messages are JSON objects with a `type` discriminant. Transport
 (WebSocket vs. Socket.IO, etc.) is an implementation choice; this document
@@ -33,17 +45,42 @@ interface PlayerSummary {
   score: number;
 }
 
+type GameMode = 'song' | 'proverb' | 'idiom';
+
 /** Sent to clients; never includes aliases or the raw answer. */
-interface SongPublicInfo {
-  index: number;      // 0-based position in the room's song list
-  totalSongs: number;
-  clipDurationMs: number; // clipEnd - clipStart, informational for UI
+interface QuestionPublicInfo {
+  mode: GameMode;
+  index: number;          // 0-based position in the room's question list
+  totalQuestions: number;
+  durationMs: number;     // the answer window, informational for UI
+  /**
+   * The proverb prefix or the idiom's meaning. Null in song mode, where the
+   * clue is the audio rather than text.
+   */
+  clue: string | null;
 }
 
 /** Revealed only at REVEAL time. */
+interface QuestionRevealInfo {
+  mode: GameMode;
+  answer: string;         // song title, whole proverb, or the four syllables
+  artist: string | null;  // song only
+  detail: string | null;  // proverb: the missing suffix. idiom: its meaning
+  clue: string | null;    // proverb: the prefix that was on screen
+  hanja: string | null;   // idiom only
+  explanation: string | null;
+}
+
+/** Superseded by the two above; still populated in every mode. */
+interface SongPublicInfo {
+  index: number;
+  totalSongs: number;     // = totalQuestions
+  clipDurationMs: number; // = durationMs
+}
+
 interface SongRevealInfo {
-  title: string;
-  artist: string;
+  title: string;          // = QuestionRevealInfo.answer
+  artist: string;         // empty outside song mode
 }
 
 /** Server-side only; never sent to clients before REVEAL. */
@@ -104,18 +141,19 @@ Notes:
 | `PLAYER_LEFT`          | broadcast              | `{ type: 'PLAYER_LEFT'; playerId: PlayerId }` (grace period expired; see analysis §6) |
 | `PLAYER_CONNECTION_CHANGED` | broadcast         | `{ type: 'PLAYER_CONNECTION_CHANGED'; playerId: PlayerId; connected: boolean }` |
 | `PLAYER_READY_CHANGED` | broadcast              | `{ type: 'PLAYER_READY_CHANGED'; playerId: PlayerId; ready: boolean }` |
-| `ROUND_START`          | broadcast              | `{ type: 'ROUND_START'; song: SongPublicInfo; mediaUrl: string; clipStartMs: number; clipEndMs: number; serverStartedAt: number; deadline: number }` |
+| `ROUND_START`          | broadcast              | `{ type: 'ROUND_START'; question: QuestionPublicInfo; song: SongPublicInfo; mediaUrl: string; clipStartMs: number; clipEndMs: number; serverStartedAt: number; deadline: number; livePlayback: boolean }`. In a text mode `mediaUrl` is `''` and `livePlayback` is false. |
 | `ROUND_PAUSED`         | broadcast              | `{ type: 'ROUND_PAUSED'; pausedAt: number }` |
 | `ROUND_RESUMED`        | broadcast              | `{ type: 'ROUND_RESUMED'; newDeadline: number }` |
 | `ANSWER_ACCEPTED`      | private, to winner     | `{ type: 'ANSWER_ACCEPTED'; pointsAwarded: number }` |
 | `ANSWER_REJECTED`      | private, to sender     | `{ type: 'ANSWER_REJECTED'; guess: string }` |
-| `ROUND_REVEAL`         | broadcast              | `{ type: 'ROUND_REVEAL'; song: SongRevealInfo; winner: { playerId: PlayerId; nickname: string } \| null; leaderboard: LeaderboardEntry[] }` |
+| `ROUND_REVEAL`         | broadcast              | `{ type: 'ROUND_REVEAL'; answer: QuestionRevealInfo; song: SongRevealInfo; winner: { playerId: PlayerId; nickname: string } \| null; scorers: RoundScorer[]; leaderboard: LeaderboardEntry[] }` — the first message in a round allowed to carry any part of the answer |
 | `LEADERBOARD_UPDATE`   | broadcast              | `{ type: 'LEADERBOARD_UPDATE'; topFive: LeaderboardEntry[]; you: LeaderboardEntry }` (see §6 — per-connection payload) |
 | `GAME_OVER`            | broadcast              | `{ type: 'GAME_OVER'; finalRanks: LeaderboardEntry[] }` (all 1–20, per product spec) |
 | `ERROR`                | private, to sender     | `{ type: 'ERROR'; reason: string; message: string }` |
 
 ```ts
 interface RoundPublicState {
+  question: QuestionPublicInfo;
   song: SongPublicInfo;
   mediaUrl: string;
   clipStartMs: number;
@@ -141,13 +179,14 @@ Each row is `(current phase, trigger) -> (next phase, server action)`.
 | Current phase | Trigger | Next phase | Server action |
 | -------------- | ------- | ---------- | -------------- |
 | `LOBBY` | `HOST_START` | `COUNTDOWN` | Validate `hostToken`; if fewer than 1 player, reject with `ERROR('NOT_ENOUGH_PLAYERS')` instead of transitioning. |
-| `COUNTDOWN` | fixed timer elapses (e.g. 3000ms, not host-configurable) | `IN_ROUND` | Load first `SongConfig`, build `AliasMatcher` via `createAliasMatcher(song.aliases)`, broadcast `ROUND_START` with `deadline = now + (clipEndMs - clipStartMs) + ANSWER_GRACE_MS`. |
-| `IN_ROUND` | `SUBMIT_ANSWER` matches (see analysis §4) | `REVEAL` | Set `round.winnerId`, award points, broadcast `ANSWER_ACCEPTED` to winner, broadcast `ROUND_REVEAL` with winner set. |
-| `IN_ROUND` | deadline reached with no winner | `REVEAL` | Broadcast `ROUND_REVEAL` with `winner: null`. |
+| `COUNTDOWN` | fixed timer elapses (e.g. 3000ms, not host-configurable) | `IN_ROUND` | Load the next `Question`, build `AliasMatcher` via `createAliasMatcher(question.aliases)`, broadcast `ROUND_START`. `deadline = now + (clipEndMs - clipStartMs) + ANSWER_GRACE_MS` in song mode; `now + TEXT_ROUND_MS` (30 s) in a text mode, where there is no clip to wait for. |
+| `IN_ROUND` | `SUBMIT_ANSWER` matches, and a scoring place is free | `IN_ROUND` or `REVEAL` | Append the player to `round.scorers`, award `POINTS_BY_PLACE[mode][place - 1]`, send `ANSWER_ACCEPTED` **to that player only**. If the last place is now taken, resolve: broadcast `ROUND_REVEAL`. Otherwise stay in `IN_ROUND` — nothing is broadcast, so a player still guessing learns nothing. |
+| `IN_ROUND` | `SUBMIT_ANSWER` matches, but the player already scored, or every place is taken | `IN_ROUND` | Send `ANSWER_TOO_LATE`, which carries no verdict. No points, and no place is consumed. |
+| `IN_ROUND` | deadline reached with fewer scorers than places | `REVEAL` | Broadcast `ROUND_REVEAL` with whoever did score, in order, keeping their points. `winner` is null if nobody did. |
 | `IN_ROUND` | `HOST_SKIP` | `REVEAL` | Same as timeout path — treat skip as an immediate, host-triggered timeout (winner is whatever was already locked in, if any race with a just-arrived correct answer is resolved by processing order, not skip priority). |
 | `IN_ROUND` (not paused) | `HOST_PAUSE` | `IN_ROUND` (paused) | Clear the deadline timer, record `pausedAt = now`, broadcast `ROUND_PAUSED`. Guesses are ignored while paused (see §2). |
 | `IN_ROUND` (paused) | `HOST_RESUME` | `IN_ROUND` (not paused) | `deadline += now - pausedAt`; reschedule the deadline timer; broadcast `ROUND_RESUMED`. |
-| `REVEAL` | fixed timer elapses (e.g. 4000ms) | `IN_ROUND` (next song) or `FINISHED` | If more songs remain: advance `song.index`, repeat the `COUNTDOWN`→`IN_ROUND` setup (this table folds the brief COUNTDOWN into this step for brevity — implementer may reintroduce an explicit COUNTDOWN broadcast here). If this was the last song: compute `finalRanks`, broadcast `GAME_OVER`. |
+| `REVEAL` | fixed timer elapses (e.g. 4000ms) | `IN_ROUND` (next question) or `FINISHED` | If more questions remain: advance the index, repeat the `COUNTDOWN`→`IN_ROUND` setup (this table folds the brief COUNTDOWN into this step for brevity — implementer may reintroduce an explicit COUNTDOWN broadcast here). If this was the last one: compute `finalRanks`, broadcast `GAME_OVER`. |
 | `FINISHED` | — | — | Terminal. Room accepts `REJOIN` (read-only) until garbage-collected per analysis §8; no further phase transitions. |
 
 Invariants the implementation must preserve:
@@ -155,11 +194,14 @@ Invariants the implementation must preserve:
 1. **Only the server initiates phase transitions.** No client message
    directly sets `phase`; every transition above is triggered either by a
    validated host message or a server-owned timer.
-2. **A round can only be won once.** `round.winnerId` is set synchronously
-   within the message handler that validates the winning guess (analysis
-   §4); every subsequent `SUBMIT_ANSWER` in that round — including ones
-   already in flight when the winner was decided — is evaluated against
-   `winnerId !== null` and rejected.
+2. **A scoring place can only be taken once, and only by a player who has
+   not already taken one.** Places are claimed by appending to
+   `round.scorers` synchronously inside the handler that validates the guess
+   (analysis §4), so two answers arriving on the same millisecond are still
+   separated by processing order and can never share a place. Once
+   `round.scorers.length` reaches the mode's limit the round is marked
+   resolved in the same handler, which is what stops a fourth correct answer
+   — including one already in flight — from slipping in behind the third.
 3. **Pausing preserves elapsed answer-window time exactly**: the
    `deadline += now - pausedAt` rule in the table is the only place round
    time is adjusted, so pause/resume cycles never shorten or lengthen the
@@ -170,9 +212,17 @@ Invariants the implementation must preserve:
 
 ## 5. Leaderboard and rank computation
 
-- Score: +100 per round won (analysis §4's documented default; adjust here
-  if the implementer changes the scoring model — this is the single source
-  of truth for that constant).
+- Score: **+1 per scoring place**, in every mode. What differs is how many
+  places a round has, which is the length of that mode's `POINTS_BY_PLACE`
+  entry in `server/gameRoom.ts` — the single source of truth for both numbers:
+
+  | Mode | Places | Why |
+  | --- | --- | --- |
+  | `song` | 1 | Everyone hears the same clip at once, so the first correct answer is the whole race. |
+  | `proverb`, `idiom` | 3 | The clue sits on screen with no audio to wait for; one place would be settled in about two seconds by whoever reads fastest. |
+
+  `scorersPerRound(mode)` is a count of scoring places in one question. It is
+  **not** a room size — that is `MAX_PLAYERS` (20), and the two are unrelated.
 - Rank: sort players by `score` descending; players with equal scores share
   the same `rank` (standard competition ranking, e.g. scores `[300, 200,
   200, 100]` → ranks `[1, 2, 2, 4]`), consistent with analysis §3's
@@ -196,12 +246,30 @@ server -> *      : PLAYER_READY_CHANGED { playerId, ready: true }
 
 host   -> server : HOST_START { hostToken }
 server -> *      : (phase becomes COUNTDOWN; implementer may broadcast an explicit ROUND_COUNTDOWN message, not detailed above)
-server -> *      : ROUND_START { song, mediaUrl, clipStartMs, clipEndMs, serverStartedAt, deadline }
+server -> *      : ROUND_START { question, song, mediaUrl, clipStartMs, clipEndMs, serverStartedAt, deadline, livePlayback }
 
 player -> server : SUBMIT_ANSWER { guess: "다이나마이트" }
-server -> player : ANSWER_ACCEPTED { pointsAwarded: 100 }
-server -> *      : ROUND_REVEAL { song: { title, artist }, winner: { playerId, nickname }, leaderboard }
+server -> player : ANSWER_ACCEPTED { pointsAwarded: 1, place: 1 }   // to that player alone
+server -> *      : ROUND_REVEAL { answer, song, winner, scorers, leaderboard }
 server -> each   : LEADERBOARD_UPDATE { topFive, you } // per-recipient payload, see §3
 
-... REVEAL timer elapses, next ROUND_START, or GAME_OVER if no songs remain ...
+... REVEAL timer elapses, next ROUND_START, or GAME_OVER if no questions remain ...
+```
+
+In a proverb or idiom room the middle of that exchange has three steps rather
+than one, and only the last of them resolves the round:
+
+```
+server -> *      : ROUND_START { question: { mode: 'proverb', index: 4, totalQuestions: 30, clue: "가는 말이 고와야", ... }, ... }
+
+player A -> server : SUBMIT_ANSWER { guess: "오는 말이 곱다" }
+server   -> A      : ANSWER_ACCEPTED { pointsAwarded: 1, place: 1 }   // round stays IN_ROUND
+player B -> server : SUBMIT_ANSWER { guess: "가는 말이 고와야 오는 말이 곱다" }
+server   -> B      : ANSWER_ACCEPTED { pointsAwarded: 1, place: 2 }   // still IN_ROUND
+player C -> server : SUBMIT_ANSWER { guess: "오는말이곱다" }
+server   -> C      : ANSWER_ACCEPTED { pointsAwarded: 1, place: 3 }   // last place taken
+server   -> *      : ROUND_REVEAL { answer: { answer: "가는 말이 고와야 오는 말이 곱다", detail: "오는 말이 곱다", clue: "가는 말이 고와야", ... }, scorers: [A, B, C], ... }
+
+player D -> server : SUBMIT_ANSWER { guess: "오는 말이 곱다" }
+server   -> D      : ANSWER_TOO_LATE                                   // no verdict, no points
 ```

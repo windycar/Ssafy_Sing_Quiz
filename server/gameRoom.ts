@@ -16,14 +16,17 @@
  *    dependency on wall-clock drift.
  *
  * Concurrency: Node runs one room's handlers on a single thread, so a handler
- * runs to completion before the next message is processed. `resolveRound` sets
- * the winner synchronously, which is why a second correct answer can never
- * also win. Do not make any handler in this file `async`.
+ * runs to completion before the next message is processed. Places are taken by
+ * appending to `round.scorers` synchronously inside one handler, which is why
+ * two players can never hold the same place however close their answers land.
+ * Do not make any handler in this file `async`.
  */
 
 import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
-import { createSongMatcher, toRoundPublicPayload } from '../shared/songCatalog.ts';
-import type { SongConfig } from '../shared/songCatalog.ts';
+import { toRoundPublicPayload } from '../shared/songCatalog.ts';
+import { createAliasMatcher } from '../shared/answerMatching.ts';
+import { toQuestionPublic, toQuestionReveal } from '../shared/questions.ts';
+import type { GameMode, Question } from '../shared/questions.ts';
 import type { AliasMatcher } from '../shared/answerMatching.ts';
 import type {
   ClientMessage,
@@ -33,10 +36,14 @@ import type {
   PlayerId,
   PlayerSummary,
   PlayerToken,
+  QuestionPublicInfo,
   RoomId,
   RoomPhase,
   RoundPublicState,
+  RoundScorer,
   ServerMessage,
+  SongPublicInfo,
+  SongRevealInfo,
   ErrorReason,
 } from './protocol.ts';
 
@@ -46,8 +53,56 @@ import type {
 export const ANSWER_GRACE_MS = 10_000;
 export const COUNTDOWN_MS = 3_000;
 export const REVEAL_MS = 4_000;
-/** Points for winning a round (realtime-protocol.md §5). */
-export const POINTS_PER_WIN = 100;
+/**
+ * The answer window for a proverb or idiom round.
+ *
+ * A song round is as long as its clip plus `ANSWER_GRACE_MS`, because the clip
+ * has to finish before anyone can be expected to know it. A text round has no
+ * such floor — the clue is on screen from the first millisecond — so the length
+ * is a flat one chosen for reading and typing a Korean phrase on a phone.
+ */
+export const TEXT_ROUND_MS = 30_000;
+/**
+ * Points by finishing place, first to last, per mode.
+ *
+ * Every place in every mode is worth one point. The spread across a game comes
+ * from how many rounds you got into, not from how fast you were on any one of
+ * them, which keeps a player who is a fraction slower on every question in the
+ * game rather than mathematically out of it by round ten.
+ *
+ * What differs between the modes is how many places there are:
+ *
+ * - **song** has one. A clip plays for everyone at once, so the first correct
+ *   answer is the whole race, and the round ends there and then.
+ * - **proverb** and **idiom** have three. Their clue is text sitting on screen
+ *   with no audio to wait for, so a single place would be decided in about two
+ *   seconds by whoever reads fastest, and everyone else would stop trying.
+ *   The round stays open until all three are taken.
+ *
+ * The length of each entry is that mode's `scorersPerRound`. That is a count
+ * of scoring places in one round — it has nothing to do with `MAX_PLAYERS`,
+ * which is how many people may be in the room.
+ */
+export const POINTS_BY_PLACE: Record<GameMode, readonly number[]> = {
+  song: [1],
+  proverb: [1, 1, 1],
+  idiom: [1, 1, 1],
+};
+
+/** What one scoring place is worth, in every mode (realtime-protocol.md §5). */
+export const POINTS_PER_WIN = 1;
+
+/**
+ * How many players may score in one round of this mode before it closes.
+ *
+ * Not a room size. "최대 3명까지" counts scoring places per question; the room
+ * still holds `MAX_PLAYERS` however many of them can score.
+ */
+export function scorersPerRound(mode: GameMode): number {
+  return POINTS_BY_PLACE[mode].length;
+}
+
+/** How many people may be in a room at once. Unrelated to `scorersPerRound`. */
 export const MAX_PLAYERS = 20;
 export const MAX_NICKNAME_LENGTH = 16;
 export const MAX_GUESS_LENGTH = 100;
@@ -67,13 +122,17 @@ interface Player {
 
 interface Round {
   index: number;
-  song: SongConfig;
+  question: Question;
   matcher: AliasMatcher;
   startedAt: number;
+  /** The full answer window, before any pause extended the deadline. */
+  durationMs: number;
   deadline: number;
   paused: boolean;
   pausedAt: number | null;
   winnerId: PlayerId | null;
+  /** Correct answerers in the order the server received them. */
+  scorers: PlayerId[];
   resolved: boolean;
   guessCounts: Map<PlayerId, number>;
 }
@@ -81,7 +140,10 @@ interface Round {
 export interface CreateRoomOptions {
   roomId?: RoomId;
   hostToken?: HostToken;
-  songs: readonly SongConfig[];
+  /** What this room plays. Songs, proverbs, or four-character idioms. */
+  mode: GameMode;
+  /** The questions, already drawn and shuffled by the caller. */
+  questions: readonly Question[];
   now: number;
 }
 
@@ -108,11 +170,12 @@ export class GameRoom {
   private phase: RoomPhase = 'LOBBY';
   private readonly players = new Map<PlayerId, Player>();
   private readonly tokenIndex = new Map<PlayerToken, PlayerId>();
-  /** Mutable only in LOBBY, through `setSongs`. */
-  private songs: readonly SongConfig[];
+  /** Both mutable only in LOBBY, through `setQuestions`. */
+  private mode: GameMode;
+  private questions: readonly Question[];
   private round: Round | null = null;
   private hostPlayerId: PlayerId | null = null;
-  private nextSongIndex = 0;
+  private nextQuestionIndex = 0;
   /** When the engine next needs `tick()` called. Null means no pending timer. */
   private timerAt: number | null = null;
   private timerKind: 'COUNTDOWN' | 'DEADLINE' | 'REVEAL' | null = null;
@@ -122,7 +185,8 @@ export class GameRoom {
     // exposure demands different entropy (analysis §7).
     this.roomId = options.roomId ?? randomBytes(5).toString('base64url');
     this.hostToken = options.hostToken ?? randomBytes(32).toString('base64url');
-    this.songs = options.songs;
+    this.mode = options.mode;
+    this.questions = options.questions;
   }
 
   // --- Introspection (used by the transport and by tests) ------------------
@@ -131,21 +195,27 @@ export class GameRoom {
     return this.phase;
   }
 
-  getSongCount(): number {
-    return this.songs.length;
+  getMode(): GameMode {
+    return this.mode;
+  }
+
+  getQuestionCount(): number {
+    return this.questions.length;
   }
 
   /**
-   * Replaces the songs this room will play.
+   * Replaces the mode and questions this room will play.
    *
-   * A room is created empty and configured afterwards, so that the catalog can
-   * be handed out against a host token rather than published (analysis §7).
-   * Refused outside LOBBY: changing the setlist mid-game would move the
-   * finish line and could swap the song a player is currently answering.
+   * A room is created and configured in two steps, so that the song catalog can
+   * be handed out against a host token rather than published (analysis §7); the
+   * mode is chosen on the same screen and travels the same path. Refused
+   * outside LOBBY: changing the setlist mid-game would move the finish line and
+   * could swap the question a player is currently answering.
    */
-  setSongs(songs: readonly SongConfig[]): boolean {
+  setQuestions(mode: GameMode, questions: readonly Question[]): boolean {
     if (this.phase !== 'LOBBY') return false;
-    this.songs = songs;
+    this.mode = mode;
+    this.questions = questions;
     return true;
   }
 
@@ -217,7 +287,7 @@ export class GameRoom {
       case 'COUNTDOWN':
         return this.startRound(now);
       case 'DEADLINE':
-        return this.resolveRound(null, now);
+        return this.resolveRound(now);
       case 'REVEAL':
         return this.advanceAfterReveal(now);
       default:
@@ -276,10 +346,39 @@ export class GameRoom {
     this.tokenIndex.set(player.token, player.id);
     if (player.isHost) this.hostPlayerId = player.id;
 
-    return [
+    const effects: Effect[] = [
       { kind: 'send', to: player.id, message: this.buildRoomState(player, now) },
       { kind: 'broadcast', message: { type: 'PLAYER_JOINED', player: this.toSummary(player) } },
     ];
+    const cue = this.cueFor(player);
+    if (cue !== null) effects.push(cue);
+    return effects;
+  }
+
+  /**
+   * The play-this cue for one player, or null if they must not have it.
+   *
+   * A host who joins or refreshes mid-round would otherwise have a running
+   * deadline and no video, so the cue is re-sent on every path that hands out
+   * a room snapshot — and only ever to the host. A text round has nothing to
+   * cue: the clue is already on every screen.
+   */
+  private cueFor(player: Player): Effect | null {
+    const round = this.round;
+    if (!player.isHost || round === null || this.phase !== 'IN_ROUND') return null;
+    if (round.question.mode !== 'song') return null;
+    const song = round.question.song;
+    if (song.youtubeId === null) return null;
+    return {
+      kind: 'send',
+      to: player.id,
+      message: {
+        type: 'ROUND_CUE',
+        youtubeId: song.youtubeId,
+        startMs: song.clipStartMs,
+        playMs: song.clipEndMs - song.clipStartMs,
+      },
+    };
   }
 
   private handleRejoin(token: PlayerToken, now: number): Effect[] {
@@ -299,6 +398,8 @@ export class GameRoom {
         message: { type: 'PLAYER_CONNECTION_CHANGED', playerId: player.id, connected: true },
       });
     }
+    const cue = this.cueFor(player);
+    if (cue !== null) effects.push(cue);
     return effects;
   }
 
@@ -332,8 +433,9 @@ export class GameRoom {
     if (this.players.size < 1) {
       return [this.errorTo(playerId, 'NOT_ENOUGH_PLAYERS', '참가자가 없습니다.')];
     }
-    if (this.songs.length === 0) {
-      return [this.errorTo(playerId, 'NOT_ENOUGH_PLAYERS', '재생 가능한 곡이 없습니다.')];
+    if (this.questions.length === 0) {
+      const why = this.mode === 'song' ? '재생 가능한 곡이 없습니다.' : '출제할 문제가 없습니다.';
+      return [this.errorTo(playerId, 'NOT_ENOUGH_PLAYERS', why)];
     }
 
     this.phase = 'COUNTDOWN';
@@ -375,7 +477,7 @@ export class GameRoom {
     }
     // Skip is an immediate timeout. If a correct answer already resolved the
     // round, that winner stands — processing order decides, not skip priority.
-    return this.resolveRound(null, now);
+    return this.resolveRound(now);
   }
 
   private pauseRound(now: number): Effect[] {
@@ -412,52 +514,89 @@ export class GameRoom {
       return [{ kind: 'send', to: player.id, message: { type: 'ANSWER_TOO_LATE' } }];
     }
 
+    // Already scored this round: say nothing about the guess either way. A
+    // verdict here would let a scorer keep probing to confirm the answer for
+    // the players still trying.
+    if (round.scorers.includes(player.id)) {
+      return [{ kind: 'send', to: player.id, message: { type: 'ANSWER_TOO_LATE' } }];
+    }
+
     if (!round.matcher.matches(guess)) {
       // Private to the guesser. Broadcasting misses would let players narrow
       // the answer from each other (analysis §4).
       return [{ kind: 'send', to: player.id, message: { type: 'ANSWER_REJECTED', guess } }];
     }
 
-    return this.resolveRound(player.id, now);
+    // The mode's own table, so a song round closes on the first correct answer
+    // and a text round holds three places open.
+    const table = POINTS_BY_PLACE[round.question.mode];
+    const place = round.scorers.length + 1;
+    const points = table[place - 1] ?? 0;
+    round.scorers.push(player.id);
+    if (round.winnerId === null) round.winnerId = player.id;
+
+    player.score += points;
+    if (place === 1) player.roundsWon += 1;
+
+    // Only the scorer hears about it: the boards stay still until REVEAL, so a
+    // player still guessing learns nothing from watching them.
+    const accepted: Effect = {
+      kind: 'send',
+      to: player.id,
+      message: { type: 'ANSWER_ACCEPTED', pointsAwarded: points, place },
+    };
+
+    // The round stays open until the last scoring place is taken, so second
+    // and third are still worth racing for where the mode has them. Taking the
+    // last one closes it — and that player is still owed their own
+    // acknowledgment, which is why it is prepended rather than dropped.
+    if (round.scorers.length < table.length) return [accepted];
+    return [accepted, ...this.resolveRound(now)];
   }
 
   /**
-   * Ends the round. Setting `resolved` here, synchronously, is what makes a
-   * second winner impossible.
+   * Ends the round and announces it.
+   *
+   * Scores were already applied as each answer landed, so this only reports.
+   * Setting `resolved` here, synchronously, is what stops a fourth scorer
+   * slipping in behind the third.
    */
-  private resolveRound(winnerId: PlayerId | null, now: number): Effect[] {
+  private resolveRound(now: number): Effect[] {
     const round = this.round;
     if (round === null || round.resolved) return [];
 
     round.resolved = true;
-    round.winnerId = winnerId;
     this.clearTimer();
     this.phase = 'REVEAL';
 
     const effects: Effect[] = [];
-    let winner: { playerId: PlayerId; nickname: string } | null = null;
-
-    if (winnerId !== null) {
-      const player = this.players.get(winnerId);
-      if (player !== undefined) {
-        player.score += POINTS_PER_WIN;
-        player.roundsWon += 1;
-        winner = { playerId: player.id, nickname: player.nickname };
-        effects.push({
-          kind: 'send',
-          to: player.id,
-          message: { type: 'ANSWER_ACCEPTED', pointsAwarded: POINTS_PER_WIN },
-        });
-      }
+    const table = POINTS_BY_PLACE[round.question.mode];
+    const scorers: RoundScorer[] = [];
+    for (const [index, playerId] of round.scorers.entries()) {
+      const player = this.players.get(playerId);
+      if (player === undefined) continue;
+      scorers.push({
+        playerId: player.id,
+        nickname: player.nickname,
+        place: index + 1,
+        pointsAwarded: table[index] ?? 0,
+      });
     }
+    const winner =
+      scorers.length === 0
+        ? null
+        : { playerId: scorers[0]!.playerId, nickname: scorers[0]!.nickname };
 
     const leaderboard = this.buildLeaderboard();
+    const answer = toQuestionReveal(round.question);
     effects.push({
       kind: 'broadcast',
       message: {
         type: 'ROUND_REVEAL',
-        song: { title: round.song.title, artist: round.song.artist },
+        answer,
+        song: toLegacyReveal(answer),
         winner,
+        scorers,
         leaderboard,
       },
     });
@@ -468,7 +607,7 @@ export class GameRoom {
   }
 
   private advanceAfterReveal(now: number): Effect[] {
-    if (this.nextSongIndex >= this.songs.length) {
+    if (this.nextQuestionIndex >= this.questions.length) {
       this.phase = 'FINISHED';
       this.round = null;
       return [{ kind: 'broadcast', message: { type: 'GAME_OVER', finalRanks: this.buildLeaderboard() } }];
@@ -478,47 +617,75 @@ export class GameRoom {
     return [{ kind: 'broadcast', message: { type: 'COUNTDOWN_STARTED', startsAt: now + COUNTDOWN_MS } }];
   }
 
-  private startRound(now: number): Effect[] {
-    const song = this.songs[this.nextSongIndex];
-    if (song === undefined) return this.advanceAfterReveal(now);
+  /**
+   * How long players get to answer this question.
+   *
+   * Song rounds keep their existing rule exactly — the clip has to finish
+   * before anyone can be expected to know it, so the window is the clip plus
+   * the grace period. A text clue is legible from the first millisecond, so a
+   * text round is a flat `TEXT_ROUND_MS`.
+   */
+  private durationOf(question: Question): number {
+    if (question.mode !== 'song') return TEXT_ROUND_MS;
+    return question.song.clipEndMs - question.song.clipStartMs + ANSWER_GRACE_MS;
+  }
 
-    const index = this.nextSongIndex;
-    this.nextSongIndex += 1;
+  private startRound(now: number): Effect[] {
+    const question = this.questions[this.nextQuestionIndex];
+    if (question === undefined) return this.advanceAfterReveal(now);
+
+    const index = this.nextQuestionIndex;
+    this.nextQuestionIndex += 1;
     this.phase = 'IN_ROUND';
 
-    const clipDuration = song.clipEndMs - song.clipStartMs;
-    const deadline = now + clipDuration + ANSWER_GRACE_MS;
+    const durationMs = this.durationOf(question);
+    const deadline = now + durationMs;
     this.round = {
       index,
-      song,
-      matcher: createSongMatcher(song),
+      question,
+      matcher: createAliasMatcher(question.aliases),
       startedAt: now,
+      durationMs,
       deadline,
       paused: false,
       pausedAt: null,
       winnerId: null,
+      scorers: [],
       resolved: false,
       guessCounts: new Map(),
     };
     this.setTimer(deadline, 'DEADLINE');
 
-    // Built by the one function allowed to decide what leaves the server
-    // before REVEAL. It cannot include the title, artist, or aliases.
-    const payload = toRoundPublicPayload(song, index, this.songs.length);
-    return [
+    // Built by the two functions allowed to decide what leaves the server
+    // before REVEAL. Between them they cannot emit a title, an artist, the
+    // aliases, a YouTube id, a proverb's missing half, or an idiom's answer.
+    const payload = this.publicRound(this.round);
+    const effects: Effect[] = [
       {
         kind: 'broadcast',
         message: {
           type: 'ROUND_START',
+          question: payload.question,
           song: payload.song,
           mediaUrl: payload.mediaUrl,
           clipStartMs: payload.clipStartMs,
           clipEndMs: payload.clipEndMs,
           serverStartedAt: now,
           deadline,
+          livePlayback: payload.livePlayback,
         },
       },
     ];
+
+    // The cue names the video, so it goes to the host and to nobody else. A
+    // host who has not joined as a player yet simply gets no cue — there is no
+    // socket to send it to, and inventing a broadcast fallback would leak it.
+    // They pick it up from `cueFor` as soon as they join.
+    const host = this.hostPlayerId === null ? undefined : this.players.get(this.hostPlayerId);
+    const cue = host === undefined ? null : this.cueFor(host);
+    if (cue !== null) effects.push(cue);
+
+    return effects;
   }
 
   // --- Leaderboard ---------------------------------------------------------
@@ -559,26 +726,61 @@ export class GameRoom {
 
   // --- Helpers -------------------------------------------------------------
 
+  /**
+   * Everything about a live round that a client may see, and nothing else.
+   *
+   * The single redacting seam for every mode. `ROUND_START` and the reconnect
+   * snapshot both go through here rather than reading `round.question`
+   * directly, because reading it directly is exactly how a future field ends
+   * up on the wire before the reveal.
+   */
+  private publicRound(round: Round): Omit<RoundPublicState, 'serverStartedAt' | 'deadline' | 'paused' | 'pausedAt'> {
+    const question = toQuestionPublic(round.question, round.index, this.questions.length, round.durationMs);
+
+    if (round.question.mode === 'song') {
+      const payload = toRoundPublicPayload(round.question.song, round.index, this.questions.length);
+      return {
+        question,
+        song: payload.song,
+        mediaUrl: payload.mediaUrl,
+        clipStartMs: payload.clipStartMs,
+        clipEndMs: payload.clipEndMs,
+        livePlayback: payload.livePlayback,
+      };
+    }
+
+    // A text round has no media at all. These are not placeholders a client
+    // should try to play: `livePlayback` is false and `mediaUrl` is empty, so
+    // every playback path is closed.
+    return {
+      question,
+      song: toLegacyPublic(question),
+      mediaUrl: '',
+      clipStartMs: 0,
+      clipEndMs: 0,
+      livePlayback: false,
+    };
+  }
+
   private buildRoomState(player: Player, now: number): ServerMessage {
     const round = this.round;
-    const roundState: RoundPublicState | undefined =
-      round === null || this.phase !== 'IN_ROUND'
-        ? undefined
-        : {
-            song: toRoundPublicPayload(round.song, round.index, this.songs.length).song,
-            mediaUrl: round.song.mediaUrl,
-            clipStartMs: round.song.clipStartMs,
-            clipEndMs: round.song.clipEndMs,
-            serverStartedAt: round.startedAt,
-            deadline: round.deadline,
-            paused: round.paused,
-            pausedAt: round.pausedAt,
-          };
+    let roundState: RoundPublicState | undefined;
+    if (round !== null && this.phase === 'IN_ROUND') {
+      roundState = {
+        ...this.publicRound(round),
+        serverStartedAt: round.startedAt,
+        deadline: round.deadline,
+        paused: round.paused,
+        pausedAt: round.pausedAt,
+      };
+    }
 
     void now;
     return {
       type: 'ROOM_STATE',
       phase: this.phase,
+      mode: this.mode,
+      totalQuestions: this.questions.length,
       players: [...this.players.values()].map((entry) => this.toSummary(entry)),
       isHost: player.isHost,
       playerToken: player.token,
@@ -626,4 +828,26 @@ export class GameRoom {
     this.timerAt = null;
     this.timerKind = null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compatible payload shapes
+//
+// `song` and `song`-shaped fields predate the other two modes. They are still
+// populated so a client written against the song-only protocol keeps rendering
+// the progress counter and the reveal instead of showing blanks. New clients
+// read `question` and `answer`; these two functions are the only place the old
+// names are produced.
+// ---------------------------------------------------------------------------
+
+function toLegacyPublic(question: QuestionPublicInfo): SongPublicInfo {
+  return {
+    index: question.index,
+    totalSongs: question.totalQuestions,
+    clipDurationMs: question.durationMs,
+  };
+}
+
+function toLegacyReveal(answer: { answer: string; artist: string | null }): SongRevealInfo {
+  return { title: answer.answer, artist: answer.artist ?? '' };
 }

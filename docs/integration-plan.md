@@ -22,10 +22,12 @@ merged up to `main` d1d09f5.
 | Nature | Playable multiplayer game: authoritative server + reference web client | Working single-player UI prototype, all state client-side |
 | Server | Built and tested | None — `music-quiz/worker/index.ts` is the stock template worker |
 
-Both branches now hold a playable-looking thing, and only one of them judges
-answers on a server. That is the decision the merge has to make deliberately:
-which UI survives. The conflicts below describe what the prototype does that
-the protocol forbids, and they apply unchanged to any port of it.
+Both branches held a playable-looking thing, and only one of them judged
+answers on a server. **That decision has since been made: the codex UI
+survives, ported onto the claude protocol.** The conflicts below describe what
+the prototype did that the protocol forbids; each now records how the port
+resolved it. They are kept rather than deleted because they are the reasons
+the current code looks the way it does.
 
 The two trees do **not** overlap on any file path. `git merge` will not
 report a textual conflict. This is the danger: the merge will look clean
@@ -125,7 +127,7 @@ them as an explicit field at an explicit time; they cannot be inferred.
 
 | Value | Prototype | Protocol | Resolution |
 | --- | --- | --- | --- |
-| Points per win | +320 | +100 (`realtime-protocol.md` §5) | Pick one; §5 of the protocol is the declared single source of truth. |
+| Points per win | +320 | +1 per scoring place (`realtime-protocol.md` §5) | Resolved: §5 of the protocol is the single source of truth, and the implementation now scores 1 point per place — one place in a song round, three in a proverb or idiom round. |
 | Round length | 12 s, fixed | `clipDurationMs + ANSWER_GRACE_MS` | Server computes it; the lobby's "제한 시간 12초" becomes read-only or host-configurable via a real setting. |
 | Tie-break | `score`, then `correct` | equal scores share a rank | Protocol wins; the prototype's extra `correct` field is fine to keep as display data. |
 | Phases | `lobby / game / results` | `LOBBY / COUNTDOWN / IN_ROUND / REVEAL / FINISHED` | Client adds `COUNTDOWN` and distinguishes `IN_ROUND` from `REVEAL` (it currently overloads a `revealed` boolean). |
@@ -195,10 +197,12 @@ Each step is independently reviewable and leaves `main` in a coherent state.
 2. **Merge `agent/codex` into `main`.** Textually clean; take codex's
    `.gitignore`. At this point `main` deliberately contains two answer
    implementations — the prototype is still standalone and unshipped.
-3. **Wire `shared/` into `music-quiz` (small, focused commit).** Add an npm
-   workspace so `music-quiz` can import `@song-quiz/shared`; delete
-   `normalizeAnswer` / `isCorrectAnswer` from `page.tsx`. This closes §1.1
-   and is the first step that must not be skipped or deferred.
+3. ~~**Wire `shared/` into `music-quiz`.**~~ — **done**, but with Vite aliases
+   and `tsconfig` `paths` rather than an npm workspace (§4). `normalizeAnswer`
+   and `isCorrectAnswer` are gone from `page.tsx`; the one surviving
+   `normalizeAnswer` call is the shared module's, used to echo the player's
+   input back to them. §1.1 is closed: there is now exactly one implementation
+   in the tree.
 4. ~~**Build the authoritative server**~~ — **done**, in `server/` on this
    branch. `gameRoom.ts` is a transport-free state machine implementing
    `realtime-protocol.md` §4; `websocket.ts` is a dependency-free RFC 6455
@@ -214,9 +218,10 @@ Each step is independently reviewable and leaves `main` in a coherent state.
    offset, message-to-state reduction) and `client/ui.ts` is a complete
    reference UI built on it: no client-side judging, no client-owned timer, no
    chat for a wrong guess to leak into, and `normalizeAnswer` imported from
-   `shared/` for display only. **`music-quiz/` is untouched** — porting it is
-   what remains of this step, and `protocolClient.ts` is importable from React
-   as-is.
+   `shared/` for display only. **`music-quiz/` is now ported too** — the same
+   `protocolClient.ts`, imported from React unchanged. Every conflict in §1 is
+   closed there; the header comment in `page.tsx` maps each one to what
+   replaced it.
 6. ~~**Add the host media-registration screen.**~~ — **done**. The setup screen
    lists the catalog with its per-song blockers and submits `media` with the
    room-creation request; `applyMediaRegistrations` overlays it before
@@ -224,14 +229,16 @@ Each step is independently reviewable and leaves `main` in a coherent state.
    which is the remaining gap: a host who wants them to survive must fill the
    song JSON instead.
 
-Steps 1–3 are mechanical and still pending. Step 3 remains the one that must
-not be skipped: the moment `music-quiz` starts talking to this server while
-still holding its own `normalizeAnswer`, §1.1 is live again.
+Steps 1 and 2 are done — `main` already carries both branches. Every remaining
+step is implemented on `agent/claude` and awaits review, not authorship.
 
 Per `AGENTS.md` ("Default workload policy"), each step's diff and test
 evidence goes to Codex for independent inspection before it is integrated
-into `main`; step 3 in particular should not be self-approved, since it is
-the step that silently changes judging behaviour for existing UI code.
+into `main`; step 3 in particular should not be self-approved, since it
+silently changes judging behaviour for existing UI code. The one thing Claude
+could not verify is the browser itself: `page.tsx` is checked by SSR render,
+production build, type-check, and the protocol tests underneath it, but nobody
+has clicked through a real game in the React UI.
 
 ## 4. Packaging detail for step 3
 
@@ -239,17 +246,23 @@ the step that silently changes judging behaviour for existing UI code.
 and is consumed as raw TypeScript via Node 22's type stripping
 (`node --test *.test.ts`). `music-quiz` builds through Vite/vinext.
 
-The low-friction path is npm workspaces at the repository root:
+**What was actually done:** Vite `resolve.alias` plus `tsconfig` `paths`, not
+npm workspaces.
 
-```json
-{ "workspaces": ["shared", "music-quiz"] }
+```ts
+"@song-quiz/shared": `${repoRoot}shared`   // + client, server
 ```
 
-Vite will transpile the imported `.ts` sources directly, so no build step is
-needed for `shared`. If the Cloudflare Workers build objects to consuming
-raw TS from `node_modules`, add a `tsup`/`tsc` build to `shared` and point
-`main`/`exports` at the output — but try the workspace route first; the
-module is dependency-free and small.
+Workspaces would have installed the sources into `node_modules` and made the
+dependency look bidirectional. Aliasing keeps it one-way — `music-quiz`
+imports `shared`/`client`/`server`, never the reverse — and needs no
+publish or build step for two dependency-free packages. Vite transpiles the
+imported `.ts` directly, which is why `allowImportingTsExtensions` is on and
+the imports carry a `.ts` suffix.
+
+The aliased sources sit outside the `music-quiz` package root, so
+`server.fs.allow` must include the repository root or the dev server refuses
+to serve them.
 
 `shared` requires Node `>=22.13.0`; `music-quiz` requires the same. No
 conflict.

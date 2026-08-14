@@ -3,6 +3,12 @@ node_modules/
 dist/
 build/
 coverage/
+*.tsbuildinfo
+
+# ...except this one: `music-quiz/vite.config.ts` imports it, so a fresh clone
+# cannot build without it. The name collides with the generic `build/` rule
+# above; it is source, not output.
+!music-quiz/build/
 
 # Local environment and secrets
 .env

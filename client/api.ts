@@ -7,7 +7,7 @@
  */
 
 import type { CatalogIssue } from '../shared/songCatalog.ts';
-import type { RoomPhase } from '../server/protocol.ts';
+import type { GameMode, RoomPhase } from '../server/protocol.ts';
 import type { MediaRegistration } from '../shared/songCatalog.ts';
 
 export interface SongListEntry {
@@ -26,6 +26,11 @@ export interface SongListResponse {
 
 /** The setlist a host just drew, and what was rejected from it. */
 export interface SetlistResponse {
+  /** What the room will play. Echoed back so the host screen can confirm it. */
+  mode: GameMode;
+  /** How many questions the room will play. 30 in either text mode. */
+  questionCount: number;
+  /** Superseded by `questionCount`; equal to it. */
   songCount: number;
   playableCount: number;
   issueCounts: Record<string, number>;
@@ -39,6 +44,9 @@ export interface CreateRoomResponse extends SetlistResponse {
 }
 
 export interface CreateRoomBody {
+  /** Which game to play. Omitted means `song`, the original. */
+  mode?: GameMode;
+  /** Song mode only; a text mode always plays its whole 30-question bank. */
   songCount?: number;
   songIds?: string[];
   shuffle?: boolean;
@@ -48,6 +56,8 @@ export interface CreateRoomBody {
 export interface RoomLookupResponse {
   roomId: string;
   phase: RoomPhase;
+  /** What the room plays, so a joining player knows before they type a name. */
+  mode: GameMode;
   playerCount: number;
   joinable: boolean;
   /** False until the host has configured a setlist. */

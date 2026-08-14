@@ -6,6 +6,10 @@
  * is the bug.
  */
 
+import type { GameMode, QuestionPublicInfo, QuestionRevealInfo } from '../shared/questions.ts';
+
+export type { GameMode, QuestionPublicInfo, QuestionRevealInfo };
+
 export type RoomId = string;
 export type PlayerId = string;
 /** Opaque secret proving a player's identity across reconnects. */
@@ -23,14 +27,26 @@ export interface PlayerSummary {
   score: number;
 }
 
-/** Sent to clients during play. Deliberately carries no answer information. */
+/**
+ * Sent to clients during play. Deliberately carries no answer information.
+ *
+ * Superseded by `QuestionPublicInfo`, which says the same thing without
+ * assuming the question is a song. Still populated in every mode so a client
+ * written against the song-only protocol keeps rendering the progress counter.
+ */
 export interface SongPublicInfo {
   index: number;
   totalSongs: number;
   clipDurationMs: number;
 }
 
-/** Only ever sent at REVEAL. */
+/**
+ * Only ever sent at REVEAL.
+ *
+ * Superseded by `QuestionRevealInfo`. In a text mode `title` carries the full
+ * proverb or the idiom and `artist` is empty, so an older client still shows
+ * something true rather than nothing.
+ */
 export interface SongRevealInfo {
   title: string;
   artist: string;
@@ -45,7 +61,14 @@ export interface LeaderboardEntry {
 }
 
 export interface RoundPublicState {
+  /**
+   * The mode-neutral view of the question: index, total, and the text clue for
+   * a proverb or idiom round. Never the answer — see `toQuestionPublic`.
+   */
+  question: QuestionPublicInfo;
+  /** Superseded by `question`. Populated in every mode; see `SongPublicInfo`. */
   song: SongPublicInfo;
+  /** Always empty outside song mode: a text round has nothing to play. */
   mediaUrl: string;
   clipStartMs: number;
   clipEndMs: number;
@@ -53,6 +76,8 @@ export interface RoundPublicState {
   deadline: number;
   paused: boolean;
   pausedAt: number | null;
+  /** See `RoundStartMessage.livePlayback`. */
+  livePlayback: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +143,10 @@ export type ClientMessage =
 export interface RoomStateMessage {
   type: 'ROOM_STATE';
   phase: RoomPhase;
+  /** What this room plays. Fixed before `HOST_START`, and shown in the lobby. */
+  mode: GameMode;
+  /** How many questions the room will play in total. */
+  totalQuestions: number;
   players: PlayerSummary[];
   isHost: boolean;
   playerToken: PlayerToken;
@@ -158,12 +187,40 @@ export interface CountdownStartedMessage {
 
 export interface RoundStartMessage {
   type: 'ROUND_START';
+  /**
+   * The mode-neutral question: which one this is, how many there are, and the
+   * proverb prefix or idiom meaning to put on screen. Never the answer.
+   */
+  question: QuestionPublicInfo;
+  /** Superseded by `question`. Populated in every mode; see `SongPublicInfo`. */
   song: SongPublicInfo;
+  /** Always empty outside song mode: a text round has nothing to play. */
   mediaUrl: string;
   clipStartMs: number;
   clipEndMs: number;
   serverStartedAt: number;
   deadline: number;
+  /**
+   * True when the host is playing the song in the room. Every other client
+   * plays nothing — there is no `mediaUrl` for them to play. Always false in a
+   * text mode.
+   */
+  livePlayback: boolean;
+}
+
+/**
+ * What to play, sent to the host alone.
+ *
+ * Separate from `ROUND_START` because a YouTube video's title names the song:
+ * broadcasting the id would broadcast the answer. This is the only message
+ * that carries it, and `GameRoom` addresses it to `hostPlayerId` only.
+ */
+export interface RoundCueMessage {
+  type: 'ROUND_CUE';
+  youtubeId: string;
+  startMs: number;
+  /** How long to play before the answer window closes. */
+  playMs: number;
 }
 
 export interface RoundPausedMessage {
@@ -179,6 +236,12 @@ export interface RoundResumedMessage {
 export interface AnswerAcceptedMessage {
   type: 'ANSWER_ACCEPTED';
   pointsAwarded: number;
+  /**
+   * Where this player came in on this round: 1 in a song round, 1–3 in a
+   * proverb or idiom round. How many places a mode has is the server's to
+   * decide; a client renders whatever it is told.
+   */
+  place: number;
 }
 
 export interface AnswerRejectedMessage {
@@ -195,10 +258,32 @@ export interface AnswerTooLateMessage {
   type: 'ANSWER_TOO_LATE';
 }
 
+/** One player who answered correctly, and where they came in. */
+export interface RoundScorer {
+  playerId: PlayerId;
+  nickname: string;
+  place: number;
+  pointsAwarded: number;
+}
+
 export interface RoundRevealMessage {
   type: 'ROUND_REVEAL';
+  /**
+   * The answer, in whichever shape this mode has one: song title and artist,
+   * the full proverb plus the half that was missing, or the four syllables
+   * plus their meaning and Hanja. This is the first message in a round that is
+   * allowed to carry any of it.
+   */
+  answer: QuestionRevealInfo;
+  /** Superseded by `answer`. Populated in every mode; see `SongRevealInfo`. */
   song: SongRevealInfo;
+  /**
+   * First place, or null when nobody got it. Kept alongside `scorers` because
+   * every screen highlights the winner and most show nothing else.
+   */
   winner: { playerId: PlayerId; nickname: string } | null;
+  /** Everyone who scored, in the order they answered. Empty if nobody did. */
+  scorers: RoundScorer[];
   leaderboard: LeaderboardEntry[];
 }
 
@@ -239,6 +324,7 @@ export type ServerMessage =
   | PlayerReadyChangedMessage
   | CountdownStartedMessage
   | RoundStartMessage
+  | RoundCueMessage
   | RoundPausedMessage
   | RoundResumedMessage
   | AnswerAcceptedMessage

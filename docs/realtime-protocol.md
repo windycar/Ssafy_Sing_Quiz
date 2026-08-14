@@ -6,12 +6,24 @@ state-transition rules, precisely enough to implement without further design
 decisions. Types are illustrative TypeScript — the implementing agent may
 adapt naming/module layout but should preserve the fields and semantics.
 
-**Modes.** A room plays one of `song | proverb | idiom`, fixed before
-`HOST_START` and reported on every `ROOM_STATE`. The three differ only in what
-the clue is, how long a round lasts, and how many players may score it; every
-rule below — authority, reconnect, pause accounting, ranking — is identical in
-all three. The implementation reflects that: one engine, one `Question` type
-(`shared/questions.ts`), and one redacting function per direction.
+**Sections.** A room does not have a mode. One room is one game and plays all
+three kinds of question in a fixed order — `song`, then `proverb`, then `idiom`
+(`SECTION_ORDER`, `shared/questions.ts`) — with nobody choosing anything. The
+host sets only how many questions each section holds, before `HOST_START`; the
+plan is reported on every `ROOM_STATE` as `sections`.
+
+The three kinds differ only in what the clue is, how long a round lasts, and how
+many players may score it. Every rule below — authority, reconnect, pause
+accounting, ranking — is identical across all of them, and each is decided **per
+question** rather than per room: `Question.mode` is what the round length, the
+scoring places, the clue on screen and the `ROUND_CUE` are all read from. The
+implementation reflects that: one engine, one ordered question list, one
+`Question` type (`shared/questions.ts`), and one redacting function per
+direction.
+
+`ROOM_STATE.mode` therefore means "the kind of question on screen, or next up
+between rounds" — it is a convenience for a client that has no round yet, not a
+property of the room.
 
 The `song`-named fields (`SongPublicInfo`, `ROUND_START.song`,
 `ROUND_REVEAL.song`) predate the other two modes. They are still populated in
@@ -46,6 +58,15 @@ interface PlayerSummary {
 }
 
 type GameMode = 'song' | 'proverb' | 'idiom';
+
+/** The order one game plays its sections in. Fixed; not host-configurable. */
+const SECTION_ORDER: readonly GameMode[] = ['song', 'proverb', 'idiom'];
+
+/** How many questions of one kind a room will play. Zero means "skipped". */
+interface SectionSummary {
+  mode: GameMode;
+  count: number;
+}
 
 /** Sent to clients; never includes aliases or the raw answer. */
 interface QuestionPublicInfo {
@@ -113,6 +134,7 @@ interface LeaderboardEntry {
 | `HOST_PAUSE`        | host    | `IN_ROUND` (not paused)  | `{ type: 'HOST_PAUSE'; hostToken: HostToken }` |
 | `HOST_RESUME`       | host    | `IN_ROUND` (paused)      | `{ type: 'HOST_RESUME'; hostToken: HostToken }` |
 | `HOST_SKIP`         | host    | `IN_ROUND` (any pause state) | `{ type: 'HOST_SKIP'; hostToken: HostToken }` |
+| `HOST_END`          | host    | any except `LOBBY`/`FINISHED` | `{ type: 'HOST_END'; hostToken: HostToken }` |
 
 Notes:
 
@@ -145,7 +167,7 @@ Notes:
 
 | `type`               | Broadcast or private | Payload |
 | --------------------- | --------------------- | ------- |
-| `ROOM_STATE`           | to (re)joining client | `{ type: 'ROOM_STATE'; phase: RoomPhase; players: PlayerSummary[]; isHost: boolean; playerToken: PlayerToken; song?: SongPublicInfo; round?: RoundPublicState; leaderboard: LeaderboardEntry[] }` |
+| `ROOM_STATE`           | to (re)joining client | `{ type: 'ROOM_STATE'; phase: RoomPhase; mode: GameMode; sections: SectionSummary[]; totalQuestions: number; players: PlayerSummary[]; isHost: boolean; playerToken: PlayerToken; song?: SongPublicInfo; round?: RoundPublicState; leaderboard: LeaderboardEntry[] }`. `sections` is the plan in playing order, including sections at zero; `mode` is what is on screen or next up. |
 | `PLAYER_JOINED`        | broadcast              | `{ type: 'PLAYER_JOINED'; player: PlayerSummary }` |
 | `PLAYER_LEFT`          | broadcast              | `{ type: 'PLAYER_LEFT'; playerId: PlayerId }` (grace period expired; see analysis §6) |
 | `PLAYER_CONNECTION_CHANGED` | broadcast         | `{ type: 'PLAYER_CONNECTION_CHANGED'; playerId: PlayerId; connected: boolean }` |
@@ -216,6 +238,7 @@ Each row is `(current phase, trigger) -> (next phase, server action)`.
 | `IN_ROUND` | `SUBMIT_ANSWER` matches, but the player already scored, or every place is taken | `IN_ROUND` | Send `ANSWER_TOO_LATE`, which carries no verdict. No points, and no place is consumed. |
 | `IN_ROUND` | deadline reached with fewer scorers than places | `REVEAL` | Broadcast `ROUND_REVEAL` with whoever did score, in order, keeping their points. `winner` is null if nobody did. |
 | `IN_ROUND` | `HOST_SKIP` | `REVEAL` | Same as timeout path — treat skip as an immediate, host-triggered timeout (winner is whatever was already locked in, if any race with a just-arrived correct answer is resolved by processing order, not skip priority). |
+| `COUNTDOWN` / `IN_ROUND` / `REVEAL` | `HOST_END` | `FINISHED` | Drop every remaining question, clear all timers, compute `finalRanks` from what has been scored so far, broadcast `GAME_OVER`. Refused in `LOBBY` (nothing to end) and `FINISHED` (already done). |
 | `IN_ROUND` (not paused) | `HOST_PAUSE` | `IN_ROUND` (paused) | Clear the deadline timer, record `pausedAt = now`, broadcast `ROUND_PAUSED`. Guesses are ignored while paused (see §2). |
 | `IN_ROUND` (paused) | `HOST_RESUME` | `IN_ROUND` (not paused) | `deadline += now - pausedAt`; reschedule the deadline timer; broadcast `ROUND_RESUMED`. |
 | `IN_ROUND` | the host's socket closes | `IN_ROUND` (paused) | Pause if it was running, and arm the host-grace timer either way: `HOST_ABANDON_MS` when the round is a YouTube one, `HOST_GRACE_MS` otherwise. Broadcast `ROUND_PAUSED` with `hostAway` and `hostGraceEndsAt`. |
@@ -273,7 +296,8 @@ Invariants the implementation must preserve:
 
 ```
 player -> server : JOIN_ROOM { roomId, nickname: "동철" }
-server -> player : ROOM_STATE { phase: 'LOBBY', players: [...], isHost: false, playerToken, leaderboard: [] }
+server -> player : ROOM_STATE { phase: 'LOBBY', mode: 'song', sections: [{song,100},{proverb,30},{idiom,30}],
+                                totalQuestions: 160, players: [...], isHost: false, playerToken, leaderboard: [] }
 server -> *      : PLAYER_JOINED { player }
 
 player -> server : SET_READY { ready: true }

@@ -117,7 +117,7 @@ const running = startServer({
   clientDir: '…/client',   // 생략하면 API/WebSocket만 제공
   sharedDir: '…/shared',
 });
-const { room } = running.game.createRoom({ songCount: 10 });
+const { room } = running.game.createRoom({ counts: { song: 10, proverb: 5, idiom: 5 } });
 await running.stop();      // 타이머 정리 + 소켓 드레이닝
 ```
 
@@ -146,7 +146,7 @@ npx tsc --noEmit -p .
 
 의존성이 없으므로 실행과 테스트에는 `npm.cmd install`이 필요하지 않습니다
 (`tsc` 실행에만 TypeScript와 `@types/node`가 필요합니다). 현재 테스트는
-**253개**(`shared` 78개, `server` 143개, `client` 32개)이며 모두 통과해야
+**271개**(`shared` 78개, `server` 159개, `client` 34개)이며 모두 통과해야
 합니다. `music-quiz/`는 빌드가 필요하므로 별도이며 **6개**입니다
 (`cd music-quiz && npm.cmd test`).
 Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 미만에서는 문법
@@ -177,9 +177,9 @@ Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 �
 | `docs/USER_GUIDE.md` / `docs/SONG_DATA_GUIDE.md` / `docs/DEVELOPMENT.md` / `docs/OPERATIONS.md` | 사용자·데이터·개발·운영 가이드 (이 문서) |
 | `shared/answerMatching.ts` | 정답 정규화(NFKC, 소문자화, 문자/숫자만 남기기) 및 별칭 매칭 |
 | `shared/songCatalog.ts` | 원본 곡 레코드를 `SongConfig`로 검증·변환, 괄호 별칭 자동 확장, 방장 음원 등록 병합 |
-| `shared/questions.ts` | 세 모드 공용 `Question` 모델. 문제 은행 검증과, 정답 공개 전에 무엇이 나갈 수 있는지 정하는 유일한 함수(`toQuestionPublic`). 브라우저에서도 불러가므로 `node:` 모듈을 쓰지 않습니다 |
+| `shared/questions.ts` | 세 종류 공용 `Question` 모델과 진행 순서(`SECTION_ORDER`). 문제 은행 검증과, 정답 공개 전에 무엇이 나갈 수 있는지 정하는 유일한 함수(`toQuestionPublic`). 브라우저에서도 불러가므로 `node:` 모듈을 쓰지 않습니다 |
 | `data/proverbs.json`, `data/idioms.json` | 속담·사자성어 문제 은행 각 50문항. **서버에서만 읽습니다** — `shared/`와 달리 정적 서빙 대상이 아닙니다 |
-| `server/questionBanks.ts` | 문제 은행을 시작할 때 한 번 읽어 검증. `data/` 기본 파일이 잘못됐으면 서버가 뜨지 않고, 방장이 루트에 둔 파일이 잘못됐으면 그 모드만 비우고 경고합니다 |
+| `server/questionBanks.ts` | 문제 은행을 시작할 때 한 번 읽어 검증. `data/` 기본 파일이 잘못됐으면 서버가 뜨지 않고, 방장이 `문제/`에 둔 파일이 잘못됐으면 그 구간만 비우고 경고합니다 |
 | `server/localFiles.ts` | 방장이 고치는 세 파일이 `문제/`(`곡목록.txt`·`속담.json`·`사자성어.json`)에 있으면 그쪽을, 없으면 `data/` 기본 파일을 쓰도록 결정하는 유일한 지점 |
 | `shared/youtube.ts` | 유튜브 링크 파싱, 영상 제목으로 곡 식별(짧은 제목은 가수까지 일치해야 인정), oEmbed 주소 생성 |
 | `shared/playlist.ts` | 플레이리스트 txt 파서. 잘못된 줄은 줄 번호와 함께 보고하고 나머지는 살립니다 |

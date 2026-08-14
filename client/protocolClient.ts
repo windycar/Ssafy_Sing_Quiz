@@ -535,6 +535,11 @@ export class ProtocolClient {
     return this.sendHost('HOST_SKIP');
   }
 
+  /** Ends the game now. Every remaining question is dropped; scores stand. */
+  hostEnd(): boolean {
+    return this.sendHost('HOST_END');
+  }
+
   // --- Internals -----------------------------------------------------------
 
   private openSocket(): void {
@@ -634,7 +639,7 @@ export class ProtocolClient {
     }, delay);
   }
 
-  private sendHost(type: 'HOST_START' | 'HOST_PAUSE' | 'HOST_RESUME' | 'HOST_SKIP'): boolean {
+  private sendHost(type: 'HOST_START' | 'HOST_PAUSE' | 'HOST_RESUME' | 'HOST_SKIP' | 'HOST_END'): boolean {
     const hostToken = this.options.hostToken;
     if (typeof hostToken !== 'string' || hostToken.length === 0) return false;
     return this.send({ type, hostToken });

@@ -334,6 +334,8 @@ export class GameRoom {
         return this.handleHostResume(message.hostToken, playerId, now);
       case 'HOST_SKIP':
         return this.handleHostSkip(message.hostToken, playerId, now);
+      case 'HOST_END':
+        return this.handleHostEnd(message.hostToken, playerId);
       default: {
         const exhaustive: never = message;
         void exhaustive;
@@ -652,6 +654,27 @@ export class GameRoom {
     this.autoPaused = false;
     this.setTimer(round.deadline, 'DEADLINE');
     return [{ kind: 'broadcast', message: { type: 'ROUND_RESUMED', newDeadline: round.deadline } }];
+  }
+
+  /**
+   * Ends the game where it stands, at the host's word.
+   *
+   * Skip drops one question; this drops every question that is left. A default
+   * room is 160 questions and about two and a half hours, so a host who has run
+   * out of evening needs a way to stop that still produces a result — closing
+   * the laptop instead would leave the room paused on an absent host and send
+   * nobody a final ranking.
+   *
+   * Refused in `LOBBY`, where there is nothing to end and no scores to report,
+   * and in `FINISHED`, where it already happened.
+   */
+  private handleHostEnd(token: HostToken, playerId: PlayerId | null): Effect[] {
+    const denied = this.authorizeHost(token, playerId);
+    if (denied !== null) return [denied];
+    if (this.phase === 'LOBBY' || this.phase === 'FINISHED') {
+      return [this.errorTo(playerId, 'WRONG_PHASE', '진행 중인 게임에서만 종료할 수 있습니다.')];
+    }
+    return this.endGame();
   }
 
   private handleHostSkip(token: HostToken, playerId: PlayerId | null, now: number): Effect[] {

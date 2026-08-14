@@ -102,6 +102,24 @@ test('progress, the mode badge, and the answer prompt all come from server state
   assert.ok(CSS.includes('#reveal-known'), 'the prefix has to be visually distinct from the answer');
 });
 
+test('every host control lives behind the host-only panel', () => {
+  // Pause, resume, skip and end are all inside `#host-controls`, which
+  // `renderRound` hides unless this tab holds a host token. The server checks
+  // the token on every one of them too — this is the second lock, not the only
+  // one — but a player must not even see a button that would fail.
+  const panel = /<div id="host-controls"[\s\S]*?<\/div>/u.exec(HTML)?.[0];
+  assert.ok(panel, 'the host control panel is missing');
+  assert.ok(/<div id="host-controls"[^>]*hidden/u.test(HTML), 'it must start hidden, before we know who this is');
+  assert.ok(UI.includes("el('host-controls').hidden = !isHost"), 'it must be shown only to a host');
+
+  for (const id of ['host-pause', 'host-resume', 'host-skip', 'host-end']) {
+    assert.ok(panel.includes(`id="${id}"`), `#${id} must be inside the host-only panel`);
+  }
+
+  // Ending the game throws away every remaining question, so it asks first.
+  assert.ok(/host-end[\s\S]{0,400}confirm\(/u.test(UI), 'ending the game must be confirmed');
+});
+
 test('the reveal lists every scorer in order, from the server message', () => {
   const reveal = /function renderReveal[\s\S]*?\n\}/u.exec(UI)?.[0];
   assert.ok(reveal, 'renderReveal is gone');

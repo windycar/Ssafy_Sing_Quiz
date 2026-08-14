@@ -141,6 +141,20 @@ export interface HostSkipMessage {
   hostToken: HostToken;
 }
 
+/**
+ * Ends the game now and shows the standings as final.
+ *
+ * `HOST_SKIP` drops one question; this drops all the remaining ones. A default
+ * room is 160 questions and roughly two and a half hours, so a host who has run
+ * out of evening needs a way to stop that is not "close the laptop" — that
+ * would leave the room paused on an absent host and everyone without a result.
+ * Whatever has been scored stands, and `GAME_OVER` reports it.
+ */
+export interface HostEndMessage {
+  type: 'HOST_END';
+  hostToken: HostToken;
+}
+
 export type ClientMessage =
   | JoinRoomMessage
   | RejoinMessage
@@ -149,7 +163,8 @@ export type ClientMessage =
   | HostStartMessage
   | HostPauseMessage
   | HostResumeMessage
-  | HostSkipMessage;
+  | HostSkipMessage
+  | HostEndMessage;
 
 // ---------------------------------------------------------------------------
 // Server -> client
@@ -425,6 +440,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'HOST_PAUSE':
     case 'HOST_RESUME':
     case 'HOST_SKIP':
+    case 'HOST_END':
       return isString('hostToken') ? (candidate as unknown as ClientMessage) : null;
     default:
       return null;

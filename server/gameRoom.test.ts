@@ -1183,6 +1183,73 @@ test('parseClientMessage accepts well-formed messages', () => {
     guess: 'a',
   });
   assert.deepEqual(parseClientMessage('{"type":"SET_READY","ready":true}'), { type: 'SET_READY', ready: true });
+  assert.deepEqual(parseClientMessage('{"type":"HOST_END","hostToken":"t"}'), { type: 'HOST_END', hostToken: 't' });
+  assert.equal(parseClientMessage('{"type":"HOST_END"}'), null, 'a host action without a token is not a host action');
+});
+
+// --- Ending the game early --------------------------------------------------
+
+test('the host can end the game mid-round, and the scores stand', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  startFirstRound(room, 2_000);
+  const at = 2_000 + COUNTDOWN_MS + 10;
+  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, guest.id, at);
+
+  // Two songs in the fixture, so there is a question left to throw away.
+  const effects = room.handleMessage({ type: 'HOST_END', hostToken: room.hostToken }, host.id, at + 10);
+
+  const over = firstOfType(broadcasts(effects), 'GAME_OVER');
+  assert.ok(over, 'ending the game has to produce a final ranking');
+  assert.equal(over.finalRanks.find((entry) => entry.playerId === guest.id)?.score, POINTS_PER_WIN);
+  assert.equal(over.finalRanks.find((entry) => entry.playerId === host.id)?.score, 0);
+  assert.equal(room.getPhase(), 'FINISHED');
+  assert.equal(room.getTimer(), null, 'a finished room must leave nothing armed');
+});
+
+test('the host can end the game between rounds, not only during one', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  startFirstRound(room, 2_000);
+  const at = 2_000 + COUNTDOWN_MS + 10;
+  closeRound(room, at);
+  assert.equal(room.getPhase(), 'REVEAL');
+
+  const effects = room.handleMessage({ type: 'HOST_END', hostToken: room.hostToken }, host.id, at + 10);
+  assert.ok(firstOfType(broadcasts(effects), 'GAME_OVER'));
+  assert.equal(room.getPhase(), 'FINISHED');
+});
+
+test('ending the game needs the host token, exactly like every other host action', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  startFirstRound(room, 2_000);
+  const at = 2_000 + COUNTDOWN_MS + 10;
+
+  // A player who simply sends the message gets nowhere, whoever they are.
+  assert.equal(errorReasonOf(room.handleMessage({ type: 'HOST_END', hostToken: 'guessed' }, guest.id, at)), 'NOT_HOST');
+  assert.equal(errorReasonOf(room.handleMessage({ type: 'HOST_END', hostToken: 'guessed' }, host.id, at)), 'NOT_HOST');
+  assert.equal(room.getPhase(), 'IN_ROUND', 'the game must still be running');
+});
+
+test('there is nothing to end in the lobby, or in a game already over', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  assert.equal(
+    errorReasonOf(room.handleMessage({ type: 'HOST_END', hostToken: room.hostToken }, host.id, 1_500)),
+    'WRONG_PHASE',
+  );
+
+  startFirstRound(room, 2_000);
+  const at = 2_000 + COUNTDOWN_MS + 10;
+  room.handleMessage({ type: 'HOST_END', hostToken: room.hostToken }, host.id, at);
+  assert.equal(room.getPhase(), 'FINISHED');
+  assert.equal(
+    errorReasonOf(room.handleMessage({ type: 'HOST_END', hostToken: room.hostToken }, host.id, at + 10)),
+    'WRONG_PHASE',
+  );
 });
 
 test('an oversized guess is dropped rather than judged', () => {

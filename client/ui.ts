@@ -1072,6 +1072,18 @@ function wire(): void {
   el('host-resume').addEventListener('click', () => act(() => client?.hostResume()));
   el('host-skip').addEventListener('click', () => act(() => client?.hostSkip()));
 
+  // Confirmed, because it cannot be undone: every remaining question is gone
+  // and the room goes straight to the final ranking. The count comes from the
+  // server's own state so the host sees exactly what they are giving up.
+  el('host-end').addEventListener('click', () => {
+    const state = client?.getState();
+    const played = (state?.round?.question.index ?? 0) + 1;
+    const total = state?.totalQuestions ?? 0;
+    const left = Math.max(0, total - played);
+    if (!confirm(`남은 ${left}문제를 건너뛰고 지금 점수로 게임을 끝냅니다. 계속할까요?`)) return;
+    act(() => client?.hostEnd());
+  });
+
   const answerInput = el<HTMLInputElement>('answer-input');
   answerInput.addEventListener('input', () => {
     // Cosmetic only. This is the server's normalizer, shown so a player can see

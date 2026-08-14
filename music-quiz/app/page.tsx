@@ -489,6 +489,23 @@ export default function Home() {
     if (run() === false) setToast("서버와 연결되어 있지 않습니다.");
   };
 
+  /** The server refuses it in LOBBY and FINISHED; the button says so first. */
+  const canEndGame = state !== null && state.phase !== "LOBBY" && state.phase !== "FINISHED";
+
+  /**
+   * Ends the game now, after confirming.
+   *
+   * Confirmed because it cannot be undone: every remaining question is dropped
+   * and the room goes straight to the final ranking. The count comes from the
+   * server's own state so the host sees exactly what they are giving up.
+   */
+  const onEndGame = (): void => {
+    const played = (round?.question.index ?? 0) + 1;
+    const left = Math.max(0, (state?.totalQuestions ?? 0) - played);
+    if (!window.confirm(`남은 ${left}문제를 건너뛰고 지금 점수로 게임을 끝냅니다. 계속할까요?`)) return;
+    hostAction(() => clientRef.current?.hostEnd());
+  };
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -973,6 +990,11 @@ export default function Home() {
                   disabled={state?.phase !== "IN_ROUND"}
                 >
                   {textMode ? "현재 문제 스킵" : "현재 곡 스킵"} <b>⇥</b>
+                </button>
+                {/* 남은 문제를 전부 버리고 지금까지의 점수로 결산합니다.
+                    되돌릴 수 없으므로 한 번 더 확인합니다. */}
+                <button className="danger" onClick={onEndGame} disabled={!canEndGame}>
+                  게임 종료
                 </button>
               </div>
             )}

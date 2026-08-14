@@ -777,6 +777,13 @@ button:disabled {
   color: white;
   border-color: var(--orange);
 }
+/* 되돌릴 수 없는 조작이므로 나머지와 확실히 달라 보여야 합니다. 스킵 옆에 두되
+   같은 색을 쓰지 않는 이유입니다 — 한 문제와 게임 전체는 다른 무게입니다. */
+.host-controls button.danger {
+  background: transparent;
+  color: #ff8f6b;
+  border-color: #6b3a2c;
+}
 .host-controls button b {
   margin-left: 8px;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Drop the Beat — the prototype, converted into a real protocol client.
+ * SsafyDay — the prototype, converted into a real protocol client.
  *
  * This file used to judge answers in the browser, hold the answer in client
  * state, hardcode the reveal, run its own countdown, and append wrong guesses
@@ -530,8 +530,8 @@ export default function Home() {
             <i />
           </span>
           <span className="brand-copy">
-            <b>DROP THE BEAT</b>
-            <small>ONLINE MUSIC QUIZ</small>
+            <b>SsafyDay</b>
+            <small>ONLINE QUIZ</small>
           </span>
         </div>
         <div className="top-actions">
@@ -552,7 +552,7 @@ export default function Home() {
         <section className="lobby page-enter">
           <div className="lobby-heading">
             <div>
-              <span className="eyebrow">ONLINE MUSIC QUIZ</span>
+              <span className="eyebrow">ONLINE QUIZ</span>
               <h1>
                 방에 들어가
                 <br />
@@ -1064,8 +1064,10 @@ export default function Home() {
         <section className="results page-enter">
           <div className="result-head">
             <span className="eyebrow">GAME COMPLETE</span>
+            {/* 노래만 하던 시절의 문구였습니다. 한 판이 노래·속담·사자성어를
+                모두 도는 지금은 음악 왕이 아니라 정답왕입니다. */}
             <h1>
-              오늘의 <em>음악 왕</em>이<br />
+              오늘의 <em>정답왕</em>이<br />
               결정되었습니다.
             </h1>
             <p>

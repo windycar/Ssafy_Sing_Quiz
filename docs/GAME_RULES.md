@@ -1,4 +1,4 @@
-# 게임 방식 — Drop the Beat
+# 게임 방식 — SsafyDay
 
 이 문서는 **게임이 어떻게 굴러가는지**만 정리합니다. 조작 방법과 문제 해결은
 [`USER_GUIDE.md`](./USER_GUIDE.md), 메시지 규격은

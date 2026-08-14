@@ -24,7 +24,7 @@ if errorlevel 1 (
 
 echo.
 echo ============================================
-echo   Drop the Beat
+echo   SsafyDay
 echo ============================================
 echo.
 

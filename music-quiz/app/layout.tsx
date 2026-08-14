@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
-const title = "Drop the Beat — 온라인 노래 맞히기";
+const title = "SsafyDay — 노래 · 속담 · 사자성어 맞히기";
 const description = "최대 20명이 동시에 즐기는 실시간 PC 온라인 음악 퀴즈";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title,
     description,
-    openGraph: { title, description, type: "website", images: [{ url: image, width: 1728, height: 909, alt: "Drop the Beat 온라인 음악 퀴즈" }] },
+    openGraph: { title, description, type: "website", images: [{ url: image, width: 1728, height: 909, alt: "SsafyDay 온라인 퀴즈" }] },
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };
 }

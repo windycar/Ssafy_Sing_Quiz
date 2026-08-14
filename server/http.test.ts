@@ -606,7 +606,7 @@ test('the client is served with a content security policy', async () => {
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type') ?? '', /text\/html/u);
       assert.match(response.headers.get('content-security-policy') ?? '', /default-src 'self'/u);
-      assert.match(await response.text(), /Drop the Beat/u);
+      assert.match(await response.text(), /SsafyDay/u);
     },
     { serveClient: true },
   );

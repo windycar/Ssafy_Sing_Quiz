@@ -631,6 +631,18 @@ test('a .ts source is served as JavaScript that a browser can actually run', asy
   );
 });
 
+test('SSAFY DAY artwork is served as PNG', async () => {
+  await withServer(
+    async ({ base }) => {
+      const response = await fetch(`${base}/assets/ssafy-day-hero.png`);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('content-type'), 'image/png');
+      assert.ok((await response.arrayBuffer()).byteLength > 100_000);
+    },
+    { serveClient: true },
+  );
+});
+
 test('shared/ is reachable from the client so both judge by the same rules', async () => {
   await withServer(
     async ({ base }) => {

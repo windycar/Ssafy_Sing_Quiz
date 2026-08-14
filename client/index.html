@@ -18,8 +18,8 @@
       <div class="brand">
         <span class="brand-mark"><i></i><i></i><i></i></span>
         <span class="brand-copy">
-          <b>SsafyDay</b>
-          <small>ONLINE QUIZ</small>
+          <b>SSAFY DAY</b>
+          <small>QUIZ FESTIVAL</small>
         </span>
       </div>
       <div class="top-actions">
@@ -30,10 +30,26 @@
     <main>
       <!-- 1. 시작 화면 ------------------------------------------------------->
       <section id="screen-home" class="screen lobby page-enter">
-        <div class="lobby-heading">
-          <div>
-            <span class="eyebrow">ONLINE QUIZ</span>
-            <h1>방에 들어가<br /><em>정답을 맞히세요.</em></h1>
+        <div class="event-hero">
+          <div class="hero-copy">
+            <span class="eyebrow">SSAFY DAY · LIVE QUIZ</span>
+            <p class="event-kicker">오늘만큼은 코드 대신 정답을 외쳐요</p>
+            <h1>우리 반의<br /><em>정답왕을 찾아라!</em></h1>
+            <p class="hero-description">
+              노래를 듣고, 속담을 잇고, 사자성어를 맞히는 싸피데이 팀 퀴즈.
+              참여 코드를 입력하면 바로 시작됩니다.
+            </p>
+            <div class="hero-chips" aria-label="게임 진행 순서">
+              <span><b>01</b> 노래</span>
+              <i aria-hidden="true">→</i>
+              <span><b>02</b> 속담</span>
+              <i aria-hidden="true">→</i>
+              <span><b>03</b> 사자성어</span>
+            </div>
+          </div>
+          <div class="hero-art" aria-hidden="true">
+            <img src="/assets/ssafy-day-hero.png" alt="" />
+            <span class="hero-sticker">20 PLAYERS<br /><b>ONE TEAM</b></span>
           </div>
         </div>
 
@@ -58,7 +74,7 @@
                 <span class="host-only">HOST</span>
               </div>
               <p class="card-copy">
-                방장은 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.
+                방장은 앞 컴퓨터에서 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.
               </p>
               <!--
                 고를 모드가 없습니다. 한 방이 곧 한 게임이고, 아래 순서대로
@@ -353,10 +369,11 @@
       <!-- 7. 최종 결과 -------------------------------------------------------->
       <section id="screen-final" class="screen results page-enter" hidden>
         <div class="result-head">
-          <span class="eyebrow">GAME COMPLETE</span>
+          <span class="eyebrow">SSAFY DAY · GAME COMPLETE</span>
           <!-- 노래만 하던 시절의 문구였습니다. 한 판이 노래·속담·사자성어를
                모두 도는 지금은 음악 왕이 아니라 정답왕입니다. -->
           <h1>오늘의 <em>정답왕</em>이<br />결정되었습니다.</h1>
+          <img class="result-illustration" src="/assets/ssafy-day-trophy.png" alt="빛나는 정답왕 트로피" />
         </div>
         <ol id="podium" class="podium"></ol>
         <section class="final-table panel">

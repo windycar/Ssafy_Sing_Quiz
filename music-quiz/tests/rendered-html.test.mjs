@@ -13,13 +13,13 @@ async function render() {
   );
 }
 
-test("server-renders the Drop the Beat lobby", async () => {
+test("server-renders the SSAFY DAY event lobby", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /DROP THE BEAT/);
-  assert.match(html, /ONLINE MUSIC QUIZ/);
+  assert.match(html, /SSAFY DAY/);
+  assert.match(html, /정답왕을 찾아라/);
   // The home screen is what is server-rendered: joining a room, and creating
   // one. The lobby and the play screens live behind client state, so asserting
   // on their copy here only ever tested the bundler.
@@ -28,7 +28,7 @@ test("server-renders the Drop the Beat lobby", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
 });
 
-test("the room-creation screen offers the three modes, in order", async () => {
+test("the room-creation screen presents the fixed three-chapter journey in order", async () => {
   // Server-rendered, so this is the real markup a host is handed rather than a
   // claim about the source.
   const html = await (await render()).text();
@@ -42,9 +42,8 @@ test("the room-creation screen offers the three modes, in order", async () => {
   assert.ok(idiom >= 0, "사자성어 맞히기 is missing from the mode selector");
   assert.ok(song < proverb && proverb < idiom, "the modes must read 노래 → 속담 → 사자성어");
 
-  assert.match(html, /name="game-mode"/, "the modes have to be one radio group");
-  assert.match(html, /value="proverb"/);
-  assert.match(html, /value="idiom"/);
+  assert.doesNotMatch(html, /name="game-mode"/, "the fixed journey must not be presented as a mode choice");
+  assert.match(html, /게임 진행 순서/);
 });
 
 test("no question bank answer is served to a client", async () => {
@@ -112,15 +111,17 @@ test("the React client never judges an answer", async () => {
   assert.doesNotMatch(code, /dangerouslySetInnerHTML/);
 });
 
-test("ships product metadata, social card, and no starter preview", async () => {
+test("ships SSAFY DAY metadata, event artwork, social card, and no starter preview", async () => {
   const [layout, packageJson] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
-  assert.match(layout, /Drop the Beat/);
+  assert.match(layout, /SSAFY DAY/);
   assert.match(layout, /og\.png/);
   assert.match(packageJson, /drop-the-beat-music-quiz/);
   await access(new URL("../public/og.png", import.meta.url));
+  await access(new URL("../public/ssafy-day-hero.png", import.meta.url));
+  await access(new URL("../public/ssafy-day-trophy.png", import.meta.url));
   await assert.rejects(access(new URL("../app/_sites-preview", import.meta.url)));
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });

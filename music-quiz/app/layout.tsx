@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
-const title = "SsafyDay — 노래 · 속담 · 사자성어 맞히기";
-const description = "최대 20명이 동시에 즐기는 실시간 PC 온라인 음악 퀴즈";
+const title = "SSAFY DAY — 우리 반 정답왕을 찾아라";
+const description = "최대 20명이 함께 즐기는 노래 · 속담 · 사자성어 실시간 싸피데이 퀴즈";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title,
     description,
-    openGraph: { title, description, type: "website", images: [{ url: image, width: 1728, height: 909, alt: "SsafyDay 온라인 퀴즈" }] },
+    openGraph: { title, description, type: "website", images: [{ url: image, width: 1728, height: 909, alt: "SSAFY DAY 실시간 퀴즈" }] },
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };
 }

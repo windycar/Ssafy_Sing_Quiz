@@ -26,17 +26,31 @@
  */
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { ProtocolClient, remainingInSection } from "@song-quiz/client/protocolClient.ts";
 import type { ClientState } from "@song-quiz/client/protocolClient.ts";
 import { ApiError, createRoom, fetchCatalog, lookupRoom, setSetlist } from "@song-quiz/client/api.ts";
 import type { SectionSummary, SongListEntry } from "@song-quiz/client/api.ts";
-import { DEFAULT_SECTION_COUNTS, SECTION_ORDER } from "@song-quiz/server/index.ts";
 import type { MediaRegistration } from "@song-quiz/shared/songCatalog.ts";
 import type { ServerMessage } from "@song-quiz/server/protocol.ts";
 import { normalizeAnswer } from "@song-quiz/shared/answerMatching.ts";
-import { isTextMode, MODE_LABEL, MODE_PROMPT } from "@song-quiz/shared/questions.ts";
+import {
+  isTextMode,
+  MODE_LABEL,
+  MODE_PROMPT,
+  QUESTIONS_PER_TEXT_GAME,
+  SECTION_ORDER,
+} from "@song-quiz/shared/questions.ts";
 import type { GameMode } from "@song-quiz/shared/questions.ts";
 import { apiBase, hostKey, readStorage, sessionKey, socketUrl, writeStorage } from "./gameServer";
+
+// Browser-safe setup defaults. The authoritative server still clamps these to
+// the catalog and bank sizes when the room is created.
+const DEFAULT_SECTION_COUNTS: Record<GameMode, number> = {
+  song: 100,
+  proverb: QUESTIONS_PER_TEXT_GAME,
+  idiom: QUESTIONS_PER_TEXT_GAME,
+};
 
 type View = "home" | "setup" | "lobby" | "game" | "results";
 
@@ -250,6 +264,7 @@ export default function Home() {
 
     const session = readStorage(sessionKey(room));
     if (session !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconnecting is this effect's synchronization job
       connect(room, { playerToken: session });
       return;
     }
@@ -530,8 +545,8 @@ export default function Home() {
             <i />
           </span>
           <span className="brand-copy">
-            <b>SsafyDay</b>
-            <small>ONLINE QUIZ</small>
+            <b>SSAFY DAY</b>
+            <small>QUIZ FESTIVAL</small>
           </span>
         </div>
         <div className="top-actions">
@@ -550,14 +565,37 @@ export default function Home() {
 
       {view === "home" && (
         <section className="lobby page-enter">
-          <div className="lobby-heading">
-            <div>
-              <span className="eyebrow">ONLINE QUIZ</span>
+          <div className="event-hero">
+            <div className="hero-copy">
+              <span className="eyebrow">SSAFY DAY · LIVE QUIZ</span>
+              <p className="event-kicker">오늘만큼은 코드 대신 정답을 외쳐요</p>
               <h1>
-                방에 들어가
+                우리 반의
                 <br />
-                <em>비트를 맞히세요.</em>
+                <em>정답왕을 찾아라!</em>
               </h1>
+              <p className="hero-description">
+                노래를 듣고, 속담을 잇고, 사자성어를 맞히는 싸피데이 팀 퀴즈.
+                참여 코드를 입력하면 바로 시작됩니다.
+              </p>
+              <div className="hero-chips" aria-label="게임 진행 순서">
+                <span><b>01</b> 노래</span>
+                <i aria-hidden="true">→</i>
+                <span><b>02</b> 속담</span>
+                <i aria-hidden="true">→</i>
+                <span><b>03</b> 사자성어</span>
+              </div>
+            </div>
+            <div className="hero-art" aria-hidden="true">
+              <Image
+                src="/ssafy-day-hero.png"
+                alt=""
+                width={1792}
+                height={1024}
+                priority
+                sizes="(max-width: 820px) 100vw, 62vw"
+              />
+              <span className="hero-sticker">20 PLAYERS<br /><b>ONE TEAM</b></span>
             </div>
           </div>
           <div className="lobby-grid">
@@ -594,7 +632,7 @@ export default function Home() {
                   <div>방 만들기</div>
                   <span className="host-only">HOST</span>
                 </div>
-                <p>방장은 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.</p>
+                <p>방장은 앞 컴퓨터에서 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.</p>
                 {/* 고를 모드가 없습니다. 한 방이 곧 한 게임이고, 아래 순서대로
                     끝까지 이어서 진행합니다. 몇 문제씩 낼지는 방을 만든 뒤
                     설정 화면에서 조절합니다. */}
@@ -825,6 +863,7 @@ export default function Home() {
       )}
 
       {(view === "game" || view === "results") && (
+        // eslint-disable-next-line jsx-a11y/media-has-caption -- quiz clips contain music only, never speech
         <audio ref={audioRef} preload="auto" style={{ display: "none" }} />
       )}
 
@@ -1063,7 +1102,7 @@ export default function Home() {
       {view === "results" && (
         <section className="results page-enter">
           <div className="result-head">
-            <span className="eyebrow">GAME COMPLETE</span>
+            <span className="eyebrow">SSAFY DAY · GAME COMPLETE</span>
             {/* 노래만 하던 시절의 문구였습니다. 한 판이 노래·속담·사자성어를
                 모두 도는 지금은 음악 왕이 아니라 정답왕입니다. */}
             <h1>
@@ -1073,6 +1112,14 @@ export default function Home() {
             <p>
               ROOM {roomId} · {players.length} PLAYERS
             </p>
+            <Image
+              className="result-illustration"
+              src="/ssafy-day-trophy.png"
+              alt="빛나는 정답왕 트로피"
+              width={1254}
+              height={1254}
+              sizes="(max-width: 820px) 58vw, 230px"
+            />
           </div>
 
           <div className="podium">

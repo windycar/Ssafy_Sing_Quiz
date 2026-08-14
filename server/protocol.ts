@@ -142,6 +142,22 @@ export interface HostSkipMessage {
 }
 
 /**
+ * Drops the rest of the current section and moves to the next one.
+ *
+ * The middle of the three: `HOST_SKIP` drops one question, this drops what is
+ * left of one section, `HOST_END` drops everything. A host running 100 songs
+ * who can see the room has had enough of songs needs to reach the proverbs
+ * without pressing skip ninety times.
+ *
+ * If nothing follows the current section, the game ends — that is the honest
+ * result of moving past the last one.
+ */
+export interface HostSkipSectionMessage {
+  type: 'HOST_SKIP_SECTION';
+  hostToken: HostToken;
+}
+
+/**
  * Ends the game now and shows the standings as final.
  *
  * `HOST_SKIP` drops one question; this drops all the remaining ones. A default
@@ -164,6 +180,7 @@ export type ClientMessage =
   | HostPauseMessage
   | HostResumeMessage
   | HostSkipMessage
+  | HostSkipSectionMessage
   | HostEndMessage;
 
 // ---------------------------------------------------------------------------
@@ -440,6 +457,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'HOST_PAUSE':
     case 'HOST_RESUME':
     case 'HOST_SKIP':
+    case 'HOST_SKIP_SECTION':
     case 'HOST_END':
       return isString('hostToken') ? (candidate as unknown as ClientMessage) : null;
     default:

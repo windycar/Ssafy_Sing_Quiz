@@ -184,6 +184,31 @@ export function initialState(roomId: string | null = null): ClientState {
 }
 
 /**
+ * How many questions of the current section have not been asked yet.
+ *
+ * Derived rather than sent: `sections` is the plan in playing order and
+ * `question.index` is the position in the flattened list, so the section
+ * boundaries are simple running totals. The server does not need to send a
+ * number that both clients can work out, and a number it did send could
+ * disagree with the index in the same message.
+ *
+ * Returns 0 when there is no round to be inside a section of.
+ */
+export function remainingInSection(state: ClientState): number {
+  const index = state.round?.question.index;
+  if (index === undefined) return 0;
+
+  let start = 0;
+  for (const section of state.sections) {
+    const end = start + section.count;
+    // `index` is the question on screen, so the ones left are those after it.
+    if (index < end) return end - index - 1;
+    start = end;
+  }
+  return 0;
+}
+
+/**
  * Folds one server reading of "now" into the clock offset.
  *
  * A single sample underestimates the offset by however long the message spent
@@ -535,6 +560,11 @@ export class ProtocolClient {
     return this.sendHost('HOST_SKIP');
   }
 
+  /** Drops the rest of the current section and moves to the next one. */
+  hostSkipSection(): boolean {
+    return this.sendHost('HOST_SKIP_SECTION');
+  }
+
   /** Ends the game now. Every remaining question is dropped; scores stand. */
   hostEnd(): boolean {
     return this.sendHost('HOST_END');
@@ -639,7 +669,9 @@ export class ProtocolClient {
     }, delay);
   }
 
-  private sendHost(type: 'HOST_START' | 'HOST_PAUSE' | 'HOST_RESUME' | 'HOST_SKIP' | 'HOST_END'): boolean {
+  private sendHost(
+    type: 'HOST_START' | 'HOST_PAUSE' | 'HOST_RESUME' | 'HOST_SKIP' | 'HOST_SKIP_SECTION' | 'HOST_END',
+  ): boolean {
     const hostToken = this.options.hostToken;
     if (typeof hostToken !== 'string' || hostToken.length === 0) return false;
     return this.send({ type, hostToken });

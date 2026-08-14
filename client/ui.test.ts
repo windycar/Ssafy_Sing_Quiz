@@ -112,12 +112,14 @@ test('every host control lives behind the host-only panel', () => {
   assert.ok(/<div id="host-controls"[^>]*hidden/u.test(HTML), 'it must start hidden, before we know who this is');
   assert.ok(UI.includes("el('host-controls').hidden = !isHost"), 'it must be shown only to a host');
 
-  for (const id of ['host-pause', 'host-resume', 'host-skip', 'host-end']) {
+  for (const id of ['host-pause', 'host-resume', 'host-skip', 'host-skip-section', 'host-end']) {
     assert.ok(panel.includes(`id="${id}"`), `#${id} must be inside the host-only panel`);
   }
 
-  // Ending the game throws away every remaining question, so it asks first.
-  assert.ok(/host-end[\s\S]{0,400}confirm\(/u.test(UI), 'ending the game must be confirmed');
+  // The two that throw questions away in bulk ask first. Skipping one question
+  // does not — that is the point of having three separate controls.
+  assert.ok(/host-skip-section[\s\S]{0,500}confirm\(/u.test(UI), 'skipping a section must be confirmed');
+  assert.ok(/host-end[\s\S]{0,500}confirm\(/u.test(UI), 'ending the game must be confirmed');
 });
 
 test('the reveal lists every scorer in order, from the server message', () => {

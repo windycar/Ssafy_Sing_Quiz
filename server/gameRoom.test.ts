@@ -1187,6 +1187,118 @@ test('parseClientMessage accepts well-formed messages', () => {
   assert.equal(parseClientMessage('{"type":"HOST_END"}'), null, 'a host action without a token is not a host action');
 });
 
+// --- Skipping a whole section -----------------------------------------------
+
+/** A room playing two songs, then two proverbs, then two idioms. */
+function mixedRoom(now = 1_000): GameRoom {
+  const questions = [
+    ...songQuestions(SONGS),
+    ...selectQuestions(PROVERB_BANK, 2, false),
+    ...selectQuestions(IDIOM_BANK, 2, false),
+  ];
+  return new GameRoom({ questions, now });
+}
+
+/** Runs the reveal and countdown timers until the next round is live. */
+function advanceToNextRound(room: GameRoom, from: number): number {
+  let clock = from;
+  for (let step = 0; step < 4; step += 1) {
+    const timer = room.getTimer();
+    if (timer === null) break;
+    clock = timer.at;
+    room.tick(clock);
+    if (room.getPhase() === 'IN_ROUND') break;
+  }
+  return clock;
+}
+
+test('skipping a section jumps to the first question of the next one', () => {
+  const room = mixedRoom();
+  const host = joinHost(room, '방장', 1_000);
+  startFirstRound(room, 2_000);
+  const at = 2_000 + COUNTDOWN_MS + 10;
+  assert.equal(room.getMode(), 'song', 'the game opens on songs');
+
+  // Two songs, and we are on the first. Skipping the section drops the other.
+  const effects = room.handleMessage({ type: 'HOST_SKIP_SECTION', hostToken: room.hostToken }, host.id, at);
+  assert.ok(firstOfType(broadcasts(effects), 'ROUND_REVEAL'), 'the question on screen still gets its answer shown');
+
+  const clock = advanceToNextRound(room, at);
+  assert.equal(room.getPhase(), 'IN_ROUND');
+  assert.equal(room.getMode(), 'proverb', 'the second song was dropped, not played');
+  void clock;
+});
+
+test('skipping the last section ends the game on the scores so far', () => {
+  const room = mixedRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  startFirstRound(room, 2_000);
+  let clock = 2_000 + COUNTDOWN_MS + 10;
+  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, guest.id, clock);
+
+  // Out of the songs, then out of the proverbs, then out of the idioms.
+  clock = advanceToNextRound(room, clock);
+  room.handleMessage({ type: 'HOST_SKIP_SECTION', hostToken: room.hostToken }, host.id, clock + 10);
+  clock = advanceToNextRound(room, clock + 10);
+  assert.equal(room.getMode(), 'proverb');
+
+  room.handleMessage({ type: 'HOST_SKIP_SECTION', hostToken: room.hostToken }, host.id, clock + 10);
+  clock = advanceToNextRound(room, clock + 10);
+  assert.equal(room.getMode(), 'idiom');
+
+  room.handleMessage({ type: 'HOST_SKIP_SECTION', hostToken: room.hostToken }, host.id, clock + 10);
+  const finish = advanceToNextRound(room, clock + 10);
+  void finish;
+
+  assert.equal(room.getPhase(), 'FINISHED', 'past the last section there is nothing left to play');
+  assert.equal(room.getPlayer(guest.id)?.score, POINTS_PER_WIN, 'the point earned in round one survives');
+});
+
+test('a section can be skipped between rounds, and skips the one about to start', () => {
+  const room = mixedRoom();
+  const host = joinHost(room, '방장', 1_000);
+  startFirstRound(room, 2_000);
+  const at = 2_000 + COUNTDOWN_MS + 10;
+
+  // End song 1 and let the reveal pass, so the room is counting down into
+  // song 2. `getMode` has to name the section about to start, not the one that
+  // just finished, or this would skip songs that are already behind us.
+  closeRound(room, at);
+  const reveal = room.getTimer();
+  assert.ok(reveal);
+  room.tick(reveal.at);
+  assert.equal(room.getPhase(), 'COUNTDOWN');
+  assert.equal(room.getMode(), 'song', 'song 2 is what is coming');
+
+  const effects = room.handleMessage({ type: 'HOST_SKIP_SECTION', hostToken: room.hostToken }, host.id, reveal.at + 5);
+  assert.deepEqual(effects, [], 'the pending countdown does the rest by itself');
+
+  advanceToNextRound(room, reveal.at + 5);
+  assert.equal(room.getPhase(), 'IN_ROUND');
+  assert.equal(room.getMode(), 'proverb');
+});
+
+test('skipping a section needs the host token, and is refused outside a game', () => {
+  const room = mixedRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+
+  // Nothing is running yet.
+  assert.equal(
+    errorReasonOf(room.handleMessage({ type: 'HOST_SKIP_SECTION', hostToken: room.hostToken }, host.id, 1_500)),
+    'WRONG_PHASE',
+  );
+
+  startFirstRound(room, 2_000);
+  const at = 2_000 + COUNTDOWN_MS + 10;
+  assert.equal(
+    errorReasonOf(room.handleMessage({ type: 'HOST_SKIP_SECTION', hostToken: 'guessed' }, guest.id, at)),
+    'NOT_HOST',
+  );
+  assert.equal(room.getMode(), 'song', 'the section must still be running');
+});
+
 // --- Ending the game early --------------------------------------------------
 
 test('the host can end the game mid-round, and the scores stand', () => {

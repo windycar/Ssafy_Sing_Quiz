@@ -21,7 +21,7 @@
  * (analysis §7); this file must never grow an `innerHTML` assignment.
  */
 
-import { ProtocolClient } from './protocolClient.ts';
+import { ProtocolClient, remainingInSection } from './protocolClient.ts';
 import type { ClientState } from './protocolClient.ts';
 import { ApiError, createRoom, fetchCatalog, lookupRoom, setSetlist } from './api.ts';
 import type { SongListEntry } from './api.ts';
@@ -1071,6 +1071,16 @@ function wire(): void {
   el('host-pause').addEventListener('click', () => act(() => client?.hostPause()));
   el('host-resume').addEventListener('click', () => act(() => client?.hostResume()));
   el('host-skip').addEventListener('click', () => act(() => client?.hostSkip()));
+
+  // Confirmed for the same reason as ending, at a smaller scale: one click can
+  // throw away ninety-nine songs, so it says how many before doing it.
+  el('host-skip-section').addEventListener('click', () => {
+    const state = client?.getState();
+    const left = state === undefined ? 0 : remainingInSection(state);
+    const label = MODE_LABEL[state?.round?.question.mode ?? state?.mode ?? 'song'];
+    if (!confirm(`${label} 구간의 남은 ${left}문제를 건너뛰고 다음 구간으로 넘어갑니다. 계속할까요?`)) return;
+    act(() => client?.hostSkipSection());
+  });
 
   // Confirmed, because it cannot be undone: every remaining question is gone
   // and the room goes straight to the final ranking. The count comes from the

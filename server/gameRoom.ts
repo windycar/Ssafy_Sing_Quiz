@@ -245,10 +245,16 @@ export class GameRoom {
    * A room no longer *has* a mode: it plays songs, then proverbs, then idioms
    * in one run. This reports where in that run the room is, so a lobby can say
    * what is coming and a client with no round yet has something to render.
-   * Falls back to the first question, and to `song` for an empty room.
+   *
+   * The live round wins only while there *is* one. During a countdown the round
+   * still holds the question just played, and the interesting answer is the one
+   * about to start — which matters on the countdown that crosses from the last
+   * song into the first proverb, and matters more to `HOST_SKIP_SECTION`, which
+   * would otherwise skip the section that had already finished.
    */
   getMode(): GameMode {
-    const current = this.round?.question ?? this.questions[this.nextQuestionIndex] ?? this.questions[0];
+    const live = this.phase === 'IN_ROUND' || this.phase === 'REVEAL' ? this.round?.question : undefined;
+    const current = live ?? this.questions[this.nextQuestionIndex] ?? this.questions[this.questions.length - 1];
     return current?.mode ?? 'song';
   }
 
@@ -334,6 +340,8 @@ export class GameRoom {
         return this.handleHostResume(message.hostToken, playerId, now);
       case 'HOST_SKIP':
         return this.handleHostSkip(message.hostToken, playerId, now);
+      case 'HOST_SKIP_SECTION':
+        return this.handleHostSkipSection(message.hostToken, playerId, now);
       case 'HOST_END':
         return this.handleHostEnd(message.hostToken, playerId);
       default: {
@@ -654,6 +662,39 @@ export class GameRoom {
     this.autoPaused = false;
     this.setTimer(round.deadline, 'DEADLINE');
     return [{ kind: 'broadcast', message: { type: 'ROUND_RESUMED', newDeadline: round.deadline } }];
+  }
+
+  /**
+   * Drops the rest of the current section and moves on to the next one.
+   *
+   * The middle of three: skip drops one question, this drops what is left of
+   * one section, end drops everything. Pressing skip ninety times to get out of
+   * the songs is not a workflow.
+   *
+   * Implemented by walking `nextQuestionIndex` past every question still to
+   * come of this kind, which is enough on its own — whatever timer is already
+   * armed then finds the next section waiting for it:
+   *
+   * - `IN_ROUND` also resolves the round, exactly as skip does, so the question
+   *   on screen still gets its answer shown rather than vanishing.
+   * - `REVEAL` and `COUNTDOWN` need nothing else; their pending timer runs into
+   *   the new section by itself.
+   * - Skipping the last section leaves nothing to play, and `startRound` /
+   *   `advanceAfterReveal` end the game on their own.
+   */
+  private handleHostSkipSection(token: HostToken, playerId: PlayerId | null, now: number): Effect[] {
+    const denied = this.authorizeHost(token, playerId);
+    if (denied !== null) return [denied];
+    if (this.phase === 'LOBBY' || this.phase === 'FINISHED') {
+      return [this.errorTo(playerId, 'WRONG_PHASE', '진행 중인 게임에서만 구간을 넘길 수 있습니다.')];
+    }
+
+    const mode = this.getMode();
+    while (this.questions[this.nextQuestionIndex]?.mode === mode) {
+      this.nextQuestionIndex += 1;
+    }
+
+    return this.phase === 'IN_ROUND' ? this.resolveRound(now) : [];
   }
 
   /**

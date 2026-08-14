@@ -26,7 +26,7 @@
  */
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ProtocolClient } from "@song-quiz/client/protocolClient.ts";
+import { ProtocolClient, remainingInSection } from "@song-quiz/client/protocolClient.ts";
 import type { ClientState } from "@song-quiz/client/protocolClient.ts";
 import { ApiError, createRoom, fetchCatalog, lookupRoom, setSetlist } from "@song-quiz/client/api.ts";
 import type { SectionSummary, SongListEntry } from "@song-quiz/client/api.ts";
@@ -489,8 +489,22 @@ export default function Home() {
     if (run() === false) setToast("서버와 연결되어 있지 않습니다.");
   };
 
-  /** The server refuses it in LOBBY and FINISHED; the button says so first. */
+  /** The server refuses both in LOBBY and FINISHED; the buttons say so first. */
   const canEndGame = state !== null && state.phase !== "LOBBY" && state.phase !== "FINISHED";
+
+  /**
+   * Drops the rest of this section, after confirming.
+   *
+   * Confirmed for the same reason as ending, at a smaller scale: one click can
+   * throw away ninety-nine songs, so it says how many before doing it.
+   */
+  const onSkipSection = (): void => {
+    const left = state === null ? 0 : remainingInSection(state);
+    if (!window.confirm(`${MODE_LABEL[mode]} 구간의 남은 ${left}문제를 건너뛰고 다음 구간으로 넘어갑니다. 계속할까요?`)) {
+      return;
+    }
+    hostAction(() => clientRef.current?.hostSkipSection());
+  };
 
   /**
    * Ends the game now, after confirming.
@@ -990,6 +1004,11 @@ export default function Home() {
                   disabled={state?.phase !== "IN_ROUND"}
                 >
                   {textMode ? "현재 문제 스킵" : "현재 곡 스킵"} <b>⇥</b>
+                </button>
+                {/* 이 구간의 남은 문제를 전부 건너뛰고 다음 구간으로 넘어갑니다.
+                    마지막 구간이면 게임이 끝납니다. */}
+                <button onClick={onSkipSection} disabled={!canEndGame}>
+                  구간 넘기기 <b>⏭</b>
                 </button>
                 {/* 남은 문제를 전부 버리고 지금까지의 점수로 결산합니다.
                     되돌릴 수 없으므로 한 번 더 확인합니다. */}

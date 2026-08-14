@@ -17,7 +17,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { ProtocolClient, applyServerMessage, initialState } from './protocolClient.ts';
+import { ProtocolClient, applyServerMessage, initialState, remainingInSection } from './protocolClient.ts';
 import type { ClientState, ProtocolSocket, SocketMessageEvent } from './protocolClient.ts';
 import { startServer } from '../server/index.ts';
 import type { ClientMessage, PlayerSummary, ServerMessage } from '../server/protocol.ts';
@@ -619,9 +619,13 @@ test('host actions carry the host token, and are silent without one', () => {
 
   client.hostStart();
   client.hostPause();
+  client.hostSkipSection();
+  client.hostEnd();
   assert.deepEqual(sockets[0]?.sent, [
     { type: 'HOST_START', hostToken: 'HOSTSECRET' },
     { type: 'HOST_PAUSE', hostToken: 'HOSTSECRET' },
+    { type: 'HOST_SKIP_SECTION', hostToken: 'HOSTSECRET' },
+    { type: 'HOST_END', hostToken: 'HOSTSECRET' },
   ]);
 
   const socket = new FakeSocket();
@@ -629,8 +633,36 @@ test('host actions carry the host token, and are silent without one', () => {
   guest.connect();
   socket.open();
   socket.reset();
+  // Every one of them, not just the first: a player holds no token, so there
+  // is nothing for any host action to be stamped with.
   guest.hostSkip();
+  guest.hostSkipSection();
+  guest.hostEnd();
   assert.deepEqual(socket.sent, [], 'a player with no host token sends nothing at all');
+});
+
+test('remainingInSection counts what is left of the section on screen', () => {
+  const sections = [
+    { mode: 'song' as const, count: 3 },
+    { mode: 'proverb' as const, count: 2 },
+    { mode: 'idiom' as const, count: 2 },
+  ];
+  const at = (index: number): ClientState => ({
+    ...initialState('ROOM'),
+    sections,
+    totalQuestions: 7,
+    round: { ...(reduce([roundStart]).round as NonNullable<ClientState['round']>), question: { mode: 'song', index, totalQuestions: 7, durationMs: 20_000, clue: null } },
+  });
+
+  // Songs occupy 0,1,2 — so on the first there are two left, on the last none.
+  assert.equal(remainingInSection(at(0)), 2);
+  assert.equal(remainingInSection(at(2)), 0);
+  // Proverbs occupy 3,4 and idioms 5,6, counted from their own boundaries.
+  assert.equal(remainingInSection(at(3)), 1);
+  assert.equal(remainingInSection(at(6)), 0);
+
+  // No round means no section to be inside of.
+  assert.equal(remainingInSection(initialState('ROOM')), 0);
 });
 
 // --- Real server, real sockets ----------------------------------------------

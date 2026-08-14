@@ -134,6 +134,7 @@ interface LeaderboardEntry {
 | `HOST_PAUSE`        | host    | `IN_ROUND` (not paused)  | `{ type: 'HOST_PAUSE'; hostToken: HostToken }` |
 | `HOST_RESUME`       | host    | `IN_ROUND` (paused)      | `{ type: 'HOST_RESUME'; hostToken: HostToken }` |
 | `HOST_SKIP`         | host    | `IN_ROUND` (any pause state) | `{ type: 'HOST_SKIP'; hostToken: HostToken }` |
+| `HOST_SKIP_SECTION` | host    | any except `LOBBY`/`FINISHED` | `{ type: 'HOST_SKIP_SECTION'; hostToken: HostToken }` |
 | `HOST_END`          | host    | any except `LOBBY`/`FINISHED` | `{ type: 'HOST_END'; hostToken: HostToken }` |
 
 Notes:
@@ -238,6 +239,7 @@ Each row is `(current phase, trigger) -> (next phase, server action)`.
 | `IN_ROUND` | `SUBMIT_ANSWER` matches, but the player already scored, or every place is taken | `IN_ROUND` | Send `ANSWER_TOO_LATE`, which carries no verdict. No points, and no place is consumed. |
 | `IN_ROUND` | deadline reached with fewer scorers than places | `REVEAL` | Broadcast `ROUND_REVEAL` with whoever did score, in order, keeping their points. `winner` is null if nobody did. |
 | `IN_ROUND` | `HOST_SKIP` | `REVEAL` | Same as timeout path — treat skip as an immediate, host-triggered timeout (winner is whatever was already locked in, if any race with a just-arrived correct answer is resolved by processing order, not skip priority). |
+| `COUNTDOWN` / `IN_ROUND` / `REVEAL` | `HOST_SKIP_SECTION` | unchanged, then the next section | Advance the question index past every remaining question of the current kind. In `IN_ROUND` also resolve the round, exactly as `HOST_SKIP` does, so the question on screen still gets its reveal. In `REVEAL`/`COUNTDOWN` nothing else is needed — the pending timer runs into the new section. Past the last section this leaves nothing to play, and the game ends by the normal path. |
 | `COUNTDOWN` / `IN_ROUND` / `REVEAL` | `HOST_END` | `FINISHED` | Drop every remaining question, clear all timers, compute `finalRanks` from what has been scored so far, broadcast `GAME_OVER`. Refused in `LOBBY` (nothing to end) and `FINISHED` (already done). |
 | `IN_ROUND` (not paused) | `HOST_PAUSE` | `IN_ROUND` (paused) | Clear the deadline timer, record `pausedAt = now`, broadcast `ROUND_PAUSED`. Guesses are ignored while paused (see §2). |
 | `IN_ROUND` (paused) | `HOST_RESUME` | `IN_ROUND` (not paused) | `deadline += now - pausedAt`; reschedule the deadline timer; broadcast `ROUND_RESUMED`. |

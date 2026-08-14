@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Drop the Beat — 노래 맞히기</title>
+    <title>Drop the Beat — 노래 · 속담 · 사자성어 맞히기</title>
     <link rel="stylesheet" href="/styles.css" />
     <script type="module" src="/ui.ts"></script>
   </head>
@@ -32,8 +32,8 @@
       <section id="screen-home" class="screen lobby page-enter">
         <div class="lobby-heading">
           <div>
-            <span class="eyebrow">ONLINE MUSIC QUIZ</span>
-            <h1>방에 들어가<br /><em>비트를 맞히세요.</em></h1>
+            <span class="eyebrow">ONLINE QUIZ</span>
+            <h1>방에 들어가<br /><em>정답을 맞히세요.</em></h1>
           </div>
         </div>
 
@@ -58,8 +58,30 @@
                 <span class="host-only">HOST</span>
               </div>
               <p class="card-copy">
-                방장은 곡을 고르고 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.
+                방장은 문제를 고르고 게임을 진행합니다. 참가자에게는 참여 코드만 알려 주세요.
               </p>
+              <!--
+                게임 모드는 방을 만들기 전에 고릅니다. 서버가 방에 모드를 기록하고,
+                대기실과 라운드 화면은 서버가 알려 준 모드만 보고 그립니다.
+              -->
+              <fieldset id="mode-select" class="mode-select">
+                <legend>게임 모드</legend>
+                <label>
+                  <input type="radio" name="game-mode" value="song" checked />
+                  <b>노래 맞히기</b>
+                  <small>하이라이트를 듣고 곡 제목을 맞힙니다.</small>
+                </label>
+                <label>
+                  <input type="radio" name="game-mode" value="proverb" />
+                  <b>속담 맞히기</b>
+                  <small>속담의 앞부분을 보고 뒷부분을 맞힙니다. 30문제.</small>
+                </label>
+                <label>
+                  <input type="radio" name="game-mode" value="idiom" />
+                  <b>사자성어 맞히기</b>
+                  <small>뜻풀이를 보고 사자성어를 맞힙니다. 30문제.</small>
+                </label>
+              </fieldset>
             </section>
             <button id="go-setup" type="button" class="start-button">
               <span>방 만들기</span><b>NEW</b>
@@ -73,7 +95,8 @@
         <div class="lobby-heading">
           <div>
             <span class="eyebrow">HOST SETUP</span>
-            <h1>곡을 고르고<br /><em>방에 입장하세요.</em></h1>
+            <h1 id="setup-heading">곡을 고르고<br /><em>방에 입장하세요.</em></h1>
+            <p id="setup-mode" class="mode-badge"></p>
           </div>
           <div class="lobby-summary">
             <b><code id="invite-code" class="code"></code></b>
@@ -82,7 +105,8 @@
         </div>
 
         <div class="lobby-grid">
-          <section class="panel playlist-card">
+          <!-- 속담·사자성어 모드에서는 서버가 문제를 갖고 있으므로 통째로 숨깁니다. -->
+          <section id="media-card" class="panel playlist-card">
             <div class="panel-title">
               <div>음원 등록</div>
               <span id="catalog-summary">곡 목록을 불러오는 중…</span>
@@ -106,12 +130,15 @@
                 <div>게임 설정</div>
                 <span class="host-only">HOST ONLY</span>
               </div>
-              <label for="song-count"><span>출제 곡 수</span></label>
-              <div class="setting-row">
-                <input id="song-count" type="number" min="1" max="100" value="10" />
+              <div id="song-count-row">
+                <label for="song-count"><span>출제 곡 수</span></label>
+                <div class="setting-row">
+                  <input id="song-count" type="number" min="1" max="100" value="10" />
+                </div>
               </div>
+              <p id="question-count-note" class="card-copy" hidden></p>
               <div class="setting-row">
-                <span>곡 설정</span>
+                <span id="save-setlist-label">곡 설정</span>
                 <button id="save-setlist" type="button" class="text-button">저장</button>
               </div>
               <p id="setlist-summary" class="card-copy"></p>
@@ -150,7 +177,9 @@
         <div class="lobby-heading">
           <div>
             <span class="eyebrow">WAITING ROOM</span>
-            <h1>모두 준비되면<br /><em>비트를 시작하세요.</em></h1>
+            <h1>모두 준비되면<br /><em>게임을 시작하세요.</em></h1>
+            <!-- 서버가 ROOM_STATE 로 알려 준 모드. 클라이언트가 정하지 않습니다. -->
+            <p id="lobby-mode" class="mode-badge"></p>
           </div>
           <div class="lobby-summary">
             <b><code id="lobby-code" class="code"></code></b>
@@ -191,14 +220,15 @@
           <ol id="round-ranks" class="ranks rank-list"></ol>
           <div class="legend">
             <span><i class="lime-dot"></i> 서버 판정</span>
-            <small>먼저 맞힌 1명 1점</small>
+            <!-- 모드마다 득점 인원이 달라 서버 메시지를 보고 채웁니다. -->
+            <small id="scoring-note"></small>
           </div>
         </aside>
 
         <section class="stage">
           <div class="round-meta">
             <div>
-              <span>ROUND</span>
+              <span id="round-label">ROUND</span>
               <b id="round-progress"></b>
             </div>
             <div id="timer" class="timer">
@@ -208,7 +238,8 @@
             </div>
           </div>
 
-          <div class="vinyl-stage">
+          <!-- 노래 모드 전용. 속담·사자성어 모드에서는 아래 단서 카드로 바뀝니다. -->
+          <div id="vinyl-stage" class="vinyl-stage">
             <div class="orbit orbit-one"></div>
             <div class="orbit orbit-two"></div>
             <div class="vinyl">
@@ -225,9 +256,21 @@
             </div>
           </div>
 
+          <!--
+            속담·사자성어 라운드의 문제 카드. 서버가 ROUND_START 로 보내 준 clue
+            하나만 들어갑니다 — 정답은 ROUND_REVEAL 전에는 이 화면에 존재하지
+            않습니다.
+          -->
+          <div id="clue-card" class="clue-card" hidden>
+            <b id="clue-countdown" class="clue-countdown" hidden></b>
+            <span id="clue-kind" class="genre-pill"></span>
+            <p id="clue-text" class="clue-text"></p>
+            <small id="clue-help" class="muted"></small>
+          </div>
+
           <div class="question-copy">
-            <span class="genre-pill">K-POP</span>
-            <h2>이 노래의 제목은?</h2>
+            <span id="question-kind" class="genre-pill">K-POP</span>
+            <h2 id="question-prompt">이 노래의 제목은?</h2>
             <p id="audio-state" class="muted"></p>
             <!-- 방장 화면에서만 뜹니다. 플레이어 자체는 #yt-stage 안에 숨어 있습니다. -->
             <p id="yt-state" class="muted"></p>
@@ -272,10 +315,17 @@
 
         <section class="stage revealed">
           <div class="answer-reveal">
-            <span>ROUND ANSWER</span>
-            <h2 id="reveal-title" class="reveal-title"></h2>
+            <span id="reveal-kind">ROUND ANSWER</span>
+            <!--
+              속담에서는 화면에 있던 앞부분(#reveal-known)과 참가자가 맞혀야 했던
+              뒷부분(#reveal-title)을 나눠 그립니다. 어디가 빈칸이었는지 한눈에
+              보여야 하기 때문입니다.
+            -->
+            <h2 class="reveal-title"><span id="reveal-known"></span><span id="reveal-title"></span></h2>
             <p id="reveal-artist" class="muted"></p>
+            <p id="reveal-detail" class="reveal-detail"></p>
             <p id="reveal-winner" class="feedback"></p>
+            <ol id="reveal-scorers" class="reveal-scorers"></ol>
           </div>
         </section>
       </section>

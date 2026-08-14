@@ -1116,6 +1116,157 @@ button:disabled {
   }
 }
 
+/* --------------------------------------------------------------------------
+   게임 모드: 선택, 배지, 그리고 속담·사자성어 라운드의 단서 카드.
+
+   단서 카드는 노래 모드의 턴테이블과 같은 자리를 씁니다. 둘 중 하나만
+   화면에 있고, 어느 쪽인지는 서버가 알려 준 모드가 정합니다. 카드가
+   교실 뒤에서도 읽혀야 하므로 글자 크기는 화면 폭을 따라갑니다.
+   -------------------------------------------------------------------------- */
+
+.mode-select {
+  border: 1px solid var(--line);
+  margin: 12px 0 0;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+.mode-select legend {
+  font: 900 8px Consolas, monospace;
+  letter-spacing: 2px;
+  padding: 0 6px;
+}
+.mode-select label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "radio name" "radio hint";
+  gap: 0 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.mode-select label:hover {
+  border-color: var(--line);
+}
+.mode-select label:has(input:checked) {
+  border-color: var(--ink);
+  background: var(--white);
+}
+.mode-select input {
+  grid-area: radio;
+  accent-color: var(--violet);
+  margin: 0;
+}
+.mode-select b {
+  grid-area: name;
+  font-size: 13px;
+}
+.mode-select small {
+  grid-area: hint;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.mode-badge {
+  display: inline-block;
+  margin: 8px 0 0;
+  padding: 5px 10px;
+  background: var(--violet);
+  color: var(--white);
+  font: 800 10px Consolas, monospace;
+  letter-spacing: 1px;
+}
+.mode-badge:empty {
+  display: none;
+}
+
+.clue-card {
+  z-index: 3;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: min(560px, 88vw);
+  padding: clamp(18px, 5vw, 34px) clamp(16px, 4vw, 28px);
+  border: 1px solid #353941;
+  background: rgba(255, 254, 251, 0.04);
+  text-align: center;
+}
+.clue-countdown {
+  font: 900 clamp(28px, 9vw, 54px) Consolas, monospace;
+  color: var(--lime);
+  line-height: 1;
+}
+.clue-text {
+  margin: 0;
+  color: var(--white);
+  font-size: clamp(22px, 6.2vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  line-height: 1.35;
+  /* 속담은 길어서 폰 화면에서 줄이 바뀝니다. 단어 중간에서 끊기지 않게. */
+  word-break: keep-all;
+}
+.clue-card small {
+  color: #7f858f;
+  font-size: 10px;
+}
+
+/* 속담 정답: 화면에 있던 앞부분은 흐리게, 맞혀야 했던 뒷부분은 라임색으로. */
+#reveal-known {
+  color: #7f858f;
+  font-weight: 600;
+}
+#reveal-title {
+  color: var(--lime);
+}
+.reveal-title {
+  word-break: keep-all;
+}
+.answer-reveal .reveal-detail {
+  margin-top: 8px;
+  color: var(--white);
+  font-size: clamp(11px, 3vw, 14px);
+}
+.answer-reveal .reveal-detail:empty,
+.answer-reveal .feedback:empty {
+  display: none;
+}
+
+.reveal-scorers {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.reveal-scorers li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 1px solid #353941;
+  padding: 7px 11px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--white);
+}
+.reveal-scorers li.me {
+  border-color: var(--lime);
+  color: var(--lime);
+}
+.reveal-scorers .place {
+  font: 900 9px Consolas, monospace;
+  color: var(--violet);
+}
+.reveal-scorers li.me .place {
+  color: var(--lime);
+}
+.reveal-scorers .score {
+  color: var(--lime);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

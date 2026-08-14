@@ -165,6 +165,35 @@ button:disabled { cursor: not-allowed; opacity: .46; }
   .vinyl-stage { transform: scale(.88); margin-top: -75px; margin-bottom: -15px; }
 }
 
+/*
+  게임 모드: 선택, 배지, 그리고 속담·사자성어 라운드의 단서 카드.
+
+  단서 카드는 노래 모드의 턴테이블과 같은 자리를 씁니다. 둘 중 하나만 화면에
+  있고, 어느 쪽인지는 서버가 알려 준 모드가 정합니다.
+*/
+.mode-select { border: 1px solid var(--line); margin: 12px 0 0; padding: 10px; display: grid; gap: 6px; }
+.mode-select legend { font: 900 8px Consolas, monospace; letter-spacing: 2px; padding: 0 6px; }
+.mode-select label { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "radio name" "radio hint"; gap: 0 8px; align-items: center; padding: 8px; border: 1px solid transparent; cursor: pointer; }
+.mode-select label:hover { border-color: var(--line); }
+.mode-select label:has(input:checked) { border-color: var(--ink); background: var(--white); }
+.mode-select input { grid-area: radio; accent-color: var(--violet); margin: 0; }
+.mode-select b { grid-area: name; font-size: 13px; }
+.mode-select small { grid-area: hint; color: var(--muted); font-size: 10px; }
+
+.mode-badge { display: inline-block; margin: 8px 0 0; padding: 5px 10px; background: var(--violet); color: var(--white); font: 800 10px Consolas, monospace; letter-spacing: 1px; }
+
+.clue-card { z-index: 3; display: grid; justify-items: center; gap: 8px; width: min(560px, 88%); padding: clamp(18px, 5vw, 34px) clamp(16px, 4vw, 28px); border: 1px solid #353941; background: rgba(255, 254, 251, .04); text-align: center; }
+.clue-countdown { font: 900 clamp(28px, 9vw, 54px) Consolas, monospace; color: var(--lime); line-height: 1; }
+/* 속담은 길어서 좁은 화면에서 줄이 바뀝니다. 단어 중간에서 끊기지 않게. */
+.clue-text { margin: 0; color: var(--white); font-size: clamp(22px, 4vw, 40px); font-weight: 800; letter-spacing: -.8px; line-height: 1.35; word-break: keep-all; }
+.clue-card small { color: #7f858f; font-size: 10px; }
+
+/* 속담 정답: 화면에 있던 앞부분은 흐리게, 맞혀야 했던 뒷부분은 라임색으로. */
+.answer-reveal h2 { word-break: keep-all; }
+#reveal-known { color: #7f858f; font-weight: 600; }
+#reveal-title { color: var(--lime); }
+.answer-reveal .reveal-detail { margin-top: 8px; color: var(--white); font-size: 13px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 }

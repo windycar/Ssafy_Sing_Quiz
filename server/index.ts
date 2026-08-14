@@ -19,6 +19,9 @@ import { createRequestHandler } from './http.ts';
 import { createStaticHandler } from './staticFiles.ts';
 import { applyMediaRegistrations, buildSongCatalog } from '../shared/songCatalog.ts';
 import type { MediaRegistration, RawSongRecord, SongCatalog, SongConfig } from '../shared/songCatalog.ts';
+import { songQuestions, QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
+import type { GameMode, Question } from '../shared/questions.ts';
+import { textBankFor } from './questionBanks.ts';
 
 /** An abandoned room is collected once every player has been gone this long. */
 export const ROOM_IDLE_TTL_MS = 30 * 60_000;
@@ -31,6 +34,8 @@ interface Session {
 }
 
 export interface CreateRoomOptions {
+  /** What the room plays. Defaults to `song`, the original game. */
+  mode?: GameMode;
   /** How many songs the game runs. Defaults to the whole selection. */
   songCount?: number;
   /** Restricts the draw to these song ids. Unknown ids are ignored. */
@@ -44,9 +49,16 @@ export interface CreateRoomOptions {
 
 export interface RoomCreation {
   room: GameRoom;
-  /** The catalog this room was drawn from, including everything it rejected. */
+  mode: GameMode;
+  /**
+   * The song catalog this room was drawn from, including everything it
+   * rejected. Still reported in a text mode — the host screen shows it either
+   * way — but a text room draws none of its questions from it.
+   */
   catalog: SongCatalog;
-  /** How many songs the room will actually play. */
+  /** How many questions the room will actually play. */
+  questionCount: number;
+  /** Superseded by `questionCount`; equal to it. */
   songCount: number;
 }
 
@@ -83,6 +95,33 @@ export function selectSongs(
   // random ordering of the same first N songs every time.
   if (options.songCount !== undefined) pool = pool.slice(0, Math.max(0, options.songCount));
   return pool;
+}
+
+/**
+ * Draws one text game out of a bank: thirty questions, shuffled, no repeats.
+ *
+ * The bank holds fifty and a game plays thirty, so a draw decides both which
+ * questions are asked and in what order. That is the point: two groups playing
+ * the same mode on the same evening get different sets, and the second group
+ * through has not already heard the answers. Sliced after the shuffle, so the
+ * twenty that are left out are a different twenty every time.
+ *
+ * `randomInt` rather than `Math.random` for the same reason `selectSongs` uses
+ * it: the draw is a fairness input, not a cosmetic one.
+ */
+export function selectQuestions(
+  bank: readonly Question[],
+  count = QUESTIONS_PER_TEXT_GAME,
+  shuffle = true,
+): Question[] {
+  const pool = [...bank];
+  if (shuffle) {
+    for (let i = pool.length - 1; i > 0; i -= 1) {
+      const j = randomInt(i + 1);
+      [pool[i], pool[j]] = [pool[j] as Question, pool[i] as Question];
+    }
+  }
+  return pool.slice(0, Math.max(0, count));
 }
 
 export class GameServer {
@@ -130,31 +169,55 @@ export class GameServer {
     }));
   }
 
+  /**
+   * Draws the questions for one room.
+   *
+   * The two branches are the whole difference between the modes. A song room
+   * draws from a catalog the host assembled, which is why it can come back
+   * empty and why `HOST_START` has to refuse that. A text room draws thirty
+   * out of a fifty-question bank this repository ships, so it is never empty
+   * and `songCount` does not apply to it.
+   */
+  private draw(options: CreateRoomOptions): { mode: GameMode; catalog: SongCatalog; questions: Question[] } {
+    const mode = options.mode ?? 'song';
+    const catalog = this.buildCatalog(options.media ?? []);
+
+    const bank = textBankFor(mode);
+    if (bank !== null) {
+      return {
+        mode,
+        catalog,
+        questions: selectQuestions(bank, QUESTIONS_PER_TEXT_GAME, options.shuffle !== false),
+      };
+    }
+    return { mode, catalog, questions: songQuestions(selectSongs(catalog.playable, options)) };
+  }
+
   createRoom(options: CreateRoomOptions = {}): RoomCreation {
     const now = options.now ?? Date.now();
-    const catalog = this.buildCatalog(options.media ?? []);
-    const songs = selectSongs(catalog.playable, options);
+    const { mode, catalog, questions } = this.draw(options);
 
-    const room = new GameRoom({ songs, now });
+    const room = new GameRoom({ mode, questions, now });
     this.rooms.set(room.roomId, room);
     this.touchedAt.set(room.roomId, now);
-    return { room, catalog, songCount: songs.length };
+    return { room, mode, catalog, questionCount: questions.length, songCount: questions.length };
   }
 
   /**
-   * Re-draws an existing room's setlist from host-supplied media.
+   * Re-draws an existing room's mode and questions.
    *
-   * Separate from creation because the catalog is only readable with a host
-   * token, and a host has no token until the room exists. Returns null when
-   * the room is past LOBBY and its setlist is therefore frozen.
+   * Separate from creation because the song catalog is only readable with a
+   * host token, and a host has no token until the room exists — so the host
+   * screen necessarily configures the room in a second step, and the mode is
+   * chosen on that same screen. Returns null when the room is past LOBBY and
+   * its setlist is therefore frozen.
    */
   configureRoom(room: GameRoom, options: CreateRoomOptions = {}): RoomCreation | null {
-    const catalog = this.buildCatalog(options.media ?? []);
-    const songs = selectSongs(catalog.playable, options);
-    if (!room.setSongs(songs)) return null;
+    const { mode, catalog, questions } = this.draw(options);
+    if (!room.setQuestions(mode, questions)) return null;
 
     this.touchedAt.set(room.roomId, options.now ?? Date.now());
-    return { room, catalog, songCount: songs.length };
+    return { room, mode, catalog, questionCount: questions.length, songCount: questions.length };
   }
 
   getRoom(roomId: RoomId): GameRoom | undefined {

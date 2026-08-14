@@ -28,6 +28,8 @@ import type { SongListEntry } from './api.ts';
 import type { LeaderboardEntry, ServerMessage } from '../server/protocol.ts';
 import type { MediaRegistration } from '../shared/songCatalog.ts';
 import { normalizeAnswer } from '../shared/answerMatching.ts';
+import { isGameMode, isTextMode, MODE_LABEL, MODE_PROMPT, QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
+import type { GameMode } from '../shared/questions.ts';
 
 // ---------------------------------------------------------------------------
 // DOM helpers
@@ -462,8 +464,45 @@ let client: ProtocolClient | null = null;
 let hostToken: string | null = null;
 /** The room being configured on the setup screen, before anyone has joined. */
 let setupRoomId: string | null = null;
+/**
+ * The mode of the room on the setup screen.
+ *
+ * Only the host screen needs this, and only before anyone has joined. Once
+ * there is a session the mode comes from `ROOM_STATE` like everything else —
+ * this file never decides what game is being played.
+ */
+let setupMode: GameMode = 'song';
 const player = new ClipPlayer();
 const youtube = new YouTubePlayer();
+
+/** The mode the host picked on the home screen. */
+function selectedMode(): GameMode {
+  const checked = document.querySelector<HTMLInputElement>('input[name="game-mode"]:checked');
+  const value = checked?.value ?? 'song';
+  return isGameMode(value) ? value : 'song';
+}
+
+/**
+ * Rewrites the host setup screen for the chosen mode.
+ *
+ * A proverb or idiom room has no media to register and no count to choose —
+ * the server ships all thirty questions — so the panels that exist only for
+ * songs are hidden rather than left on screen doing nothing.
+ */
+function applySetupMode(mode: GameMode): void {
+  const text = isTextMode(mode);
+  el('setup-mode').textContent = MODE_LABEL[mode];
+  el('media-card').hidden = text;
+  el('song-count-row').hidden = text;
+  el('save-setlist-label').textContent = text ? '문제 설정' : '곡 설정';
+  el('setup-heading').textContent = text ? '문제를 확인하고 방에 입장하세요.' : '곡을 고르고 방에 입장하세요.';
+
+  const note = el('question-count-note');
+  note.hidden = !text;
+  note.textContent = text
+    ? `${MODE_LABEL[mode]}는 서버가 가진 ${QUESTIONS_PER_TEXT_GAME}문제를 방마다 새로 섞어 모두 출제합니다.`
+    : '';
+}
 
 function socketUrl(): string {
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -490,9 +529,10 @@ function connect(roomId: string, options: { nickname?: string; playerToken?: str
 function handleEvent(message: ServerMessage): void {
   switch (message.type) {
     case 'ROUND_START':
-      // On a live-playback round there is no URL and nothing for a player to
-      // play: the host's ROUND_CUE arrives separately and drives the video.
-      if (!message.livePlayback) {
+      // A text round has no media at all, and a live-playback round has no URL
+      // for a player to fetch — the host's ROUND_CUE arrives separately and
+      // drives the video. Only a hosted-audio song round has something to play.
+      if (message.question.mode === 'song' && !message.livePlayback) {
         void player.start(message.mediaUrl, message.clipStartMs, message.clipEndMs);
       }
       break;
@@ -591,10 +631,10 @@ function renderFeedback(state: ClientState): void {
 
   switch (state.answerFeedback.kind) {
     case 'accepted':
-      // The place is only worth saying when more than one player can score;
-      // with one point per round it is always 1st and reads as noise.
+      // The place is worth saying only where more than one player can score;
+      // in a song round it is always 1st and reads as noise.
       node.textContent =
-        state.answerFeedback.place > 1
+        state.answerFeedback.place > 1 || isTextMode(state.mode)
           ? `정답입니다! ${state.answerFeedback.place}등 +${state.answerFeedback.pointsAwarded}점`
           : `정답입니다! +${state.answerFeedback.pointsAwarded}점`;
       node.classList.add('ok');
@@ -616,10 +656,65 @@ function renderFeedback(state: ClientState): void {
   }
 }
 
+/** Placeholder text for the answer box, per mode. */
+const ANSWER_PLACEHOLDER: Record<GameMode, string> = {
+  song: '곡 제목을 입력하세요',
+  proverb: '속담의 뒷부분을 입력하세요',
+  idiom: '사자성어 네 글자를 입력하세요',
+};
+
+/** What the clue card calls itself, per mode. */
+const CLUE_KIND: Record<GameMode, string> = {
+  song: 'K-POP',
+  proverb: '속담',
+  idiom: '사자성어',
+};
+
+const CLUE_HELP: Record<GameMode, string> = {
+  song: '',
+  proverb: '속담 전체를 적어도 되고, 빠진 뒷부분만 적어도 됩니다.',
+  idiom: '한글 네 글자도, 한자 네 글자도 정답으로 인정됩니다.',
+};
+
+/**
+ * How many people can score this mode's round, in words.
+ *
+ * Song rounds end on the first correct answer; text rounds hold three places.
+ * Written per mode rather than read off a server constant because it is copy,
+ * not a rule — the rule lives in `POINTS_BY_PLACE` on the server, and this
+ * screen only ever reports what it was told.
+ */
+const SCORING_NOTE: Record<GameMode, string> = {
+  song: '가장 먼저 맞힌 1명 1점',
+  proverb: '먼저 맞힌 3명까지 각 1점',
+  idiom: '먼저 맞힌 3명까지 각 1점',
+};
+
 function renderRound(state: ClientState): void {
   const round = state.round;
+  const mode = round?.question.mode ?? state.mode;
+  const total = round?.question.totalQuestions ?? state.totalQuestions;
+
+  el('round-label').textContent = isTextMode(mode) ? '문제' : 'ROUND';
+  el('scoring-note').textContent = SCORING_NOTE[mode];
   el('round-progress').textContent =
-    round === null ? '' : `${String(round.song.index + 1).padStart(2, '0')} / ${round.song.totalSongs}`;
+    round === null ? '' : `${String(round.question.index + 1).padStart(2, '0')} / ${total}`;
+
+  // The media stage and the clue card are the same slot: exactly one of them
+  // belongs on screen, decided by the mode the server named.
+  const text = isTextMode(mode);
+  el('vinyl-stage').hidden = text;
+  el('clue-card').hidden = !text;
+  el('question-kind').textContent = CLUE_KIND[mode];
+  el('question-prompt').textContent = MODE_PROMPT[mode];
+
+  if (text) {
+    el('clue-kind').textContent = CLUE_KIND[mode];
+    el('clue-help').textContent = CLUE_HELP[mode];
+    // The clue is whatever the server sent and nothing else. During COUNTDOWN
+    // there is no round yet, so there is nothing to show.
+    el('clue-text').textContent = round?.question.clue ?? '';
+  }
 
   const isHost = hostToken !== null;
   el('host-controls').hidden = !isHost;
@@ -627,11 +722,71 @@ function renderRound(state: ClientState): void {
   el<HTMLButtonElement>('host-resume').hidden = round?.paused !== true;
 
   const answering = state.phase === 'IN_ROUND' && round !== null && !round.paused;
-  el<HTMLInputElement>('answer-input').disabled = !answering;
+  const input = el<HTMLInputElement>('answer-input');
+  input.disabled = !answering;
+  input.placeholder = ANSWER_PLACEHOLDER[mode];
   el<HTMLFormElement>('answer-form').hidden = round === null;
 
   renderFeedback(state);
   renderRanks(el<HTMLOListElement>('round-ranks'), state.leaderboard, state.playerId);
+}
+
+/**
+ * Draws the answer, in whichever shape this mode has one.
+ *
+ * Every string here comes from `ROUND_REVEAL`. Nothing on this screen is
+ * derived from anything the client held during the round, because during the
+ * round it held none of it.
+ */
+function renderReveal(state: ClientState): void {
+  const reveal = state.reveal;
+  const answer = reveal?.answer ?? null;
+  const mode = answer?.mode ?? state.mode;
+
+  el('reveal-kind').textContent = isTextMode(mode) ? `${CLUE_KIND[mode]} 정답` : 'ROUND ANSWER';
+
+  // For a proverb the prefix was already on screen and the suffix is what
+  // players had to supply, so they are drawn as two spans and the stylesheet
+  // dims the half nobody had to guess.
+  el('reveal-known').textContent = answer?.mode === 'proverb' ? `${answer.clue ?? ''} ` : '';
+  el('reveal-title').textContent =
+    answer === null ? '' : answer.mode === 'proverb' ? (answer.detail ?? answer.answer) : answer.answer;
+
+  el('reveal-artist').textContent = answer?.artist ?? '';
+  el('reveal-detail').textContent =
+    answer?.mode === 'idiom'
+      ? [answer.hanja, answer.detail].filter((part) => part !== null && part !== '').join(' · ')
+      : '';
+
+  const scorers = reveal?.scorers ?? [];
+  const node = el('reveal-winner');
+  node.classList.remove('ok', 'no');
+  node.textContent = scorers.length === 0 ? '아무도 맞히지 못했습니다.' : '';
+  if (scorers.some((entry) => entry.playerId === state.playerId)) node.classList.add('ok');
+
+  // One row per scorer, in the order the server received them, so who came
+  // first, second and third is legible from the back of a room.
+  const list = el<HTMLOListElement>('reveal-scorers');
+  list.replaceChildren();
+  for (const entry of scorers) {
+    const item = document.createElement('li');
+    if (entry.playerId === state.playerId) item.classList.add('me');
+
+    const place = document.createElement('span');
+    place.className = 'place';
+    place.textContent = `${entry.place}등`;
+
+    const who = document.createElement('span');
+    // textContent, not innerHTML: nicknames are untrusted (analysis §7).
+    who.textContent = entry.playerId === state.playerId ? '나' : entry.nickname;
+
+    const points = document.createElement('span');
+    points.className = 'score';
+    points.textContent = `+${entry.pointsAwarded}점`;
+
+    item.append(place, who, points);
+    list.append(item);
+  }
 }
 
 function render(state: ClientState): void {
@@ -658,27 +813,7 @@ function render(state: ClientState): void {
 
     case 'REVEAL': {
       showScreen('reveal');
-      el('reveal-title').textContent = state.reveal?.title ?? '';
-      el('reveal-artist').textContent = state.reveal?.artist ?? '';
-
-      // Everyone who scored, in order. With one point per round that is a
-      // single name, but the loop covers a setlist scored several places deep.
-      const scorers = state.reveal?.scorers ?? [];
-      const node = el('reveal-winner');
-      node.classList.remove('ok', 'no');
-      if (scorers.length === 0) {
-        node.textContent = '아무도 맞히지 못했습니다.';
-      } else {
-        node.textContent = scorers
-          .map((entry) => {
-            const who = entry.playerId === state.playerId ? '나' : entry.nickname;
-            const place = scorers.length > 1 ? `${entry.place}등 ` : '';
-            return `${place}${who} +${entry.pointsAwarded}점`;
-          })
-          .join(' · ');
-        if (scorers.some((entry) => entry.playerId === state.playerId)) node.classList.add('ok');
-      }
-
+      renderReveal(state);
       renderRanks(el<HTMLOListElement>('reveal-ranks'), state.leaderboard, state.playerId);
       break;
     }
@@ -710,6 +845,10 @@ function render(state: ClientState): void {
     default:
       showScreen('lobby');
       el('lobby-code').textContent = state.roomId ?? '';
+      // The mode the server recorded on the room, not the radio button this
+      // tab happened to have selected.
+      el('lobby-mode').textContent =
+        `${MODE_LABEL[state.mode]} · ${state.totalQuestions}문제`;
       renderRoster(state);
       break;
   }
@@ -726,13 +865,17 @@ function tick(): void {
   if (client === null) return;
   const state = client.getState();
 
-  const countdown = el('countdown');
+  // Two places to put it, because the vinyl and the clue card are alternatives
+  // and the countdown belongs to whichever one is on screen.
+  const countdowns = [el('countdown'), el('clue-countdown')];
   if (state.phase === 'COUNTDOWN' && state.countdownStartsAt !== null) {
-    const left = Math.max(0, state.countdownStartsAt - client.serverNow());
-    countdown.hidden = false;
-    countdown.textContent = String(Math.ceil(left / 1000));
+    const left = String(Math.ceil(Math.max(0, state.countdownStartsAt - client.serverNow()) / 1000));
+    for (const node of countdowns) {
+      node.hidden = false;
+      node.textContent = left;
+    }
   } else {
-    countdown.hidden = true;
+    for (const node of countdowns) node.hidden = true;
   }
 
   const round = state.round;
@@ -785,17 +928,24 @@ function wire(): void {
       const button = el<HTMLButtonElement>('go-setup');
       button.disabled = true;
       try {
-        const created = await createRoom({});
+        // The mode is chosen here, before the room exists, and the server
+        // records it on the room. Everything after this reads it back.
+        const created = await createRoom({ mode: selectedMode() });
         writeStorage(hostKey(created.roomId), created.hostToken);
         hostToken = created.hostToken;
         setupRoomId = created.roomId;
+        setupMode = created.mode;
 
         el('invite-code').textContent = created.roomId;
         el<HTMLInputElement>('invite-link').value = inviteLink(created.roomId);
-        el('setlist-summary').textContent = '';
+        el('setlist-summary').textContent =
+          isTextMode(created.mode) ? `${created.questionCount}문제로 진행합니다.` : '';
         location.hash = `room=${encodeURIComponent(created.roomId)}`;
+        applySetupMode(created.mode);
         showScreen('setup');
-        await loadCatalog(created.roomId, created.hostToken);
+        // A text room draws from the server's own bank; there is no catalog to
+        // register media against, so there is nothing to fetch.
+        if (!isTextMode(created.mode)) await loadCatalog(created.roomId, created.hostToken);
       } catch (caught) {
         toast(caught instanceof ApiError ? caught.message : '방을 만들지 못했습니다.');
       } finally {
@@ -816,23 +966,31 @@ function wire(): void {
       button.disabled = true;
       error.hidden = true;
       try {
+        // The mode travels with every reconfiguration, so the room's recorded
+        // mode and this screen never disagree.
         const setlist = await setSetlist(setupRoomId, hostToken, {
-          songCount: Number(el<HTMLInputElement>('song-count').value) || 5,
-          media,
+          mode: setupMode,
+          ...(isTextMode(setupMode)
+            ? {}
+            : { songCount: Number(el<HTMLInputElement>('song-count').value) || 5, media }),
         });
 
-        el('setlist-summary').textContent =
-          setlist.songCount === 0
-            ? '재생 가능한 곡이 없습니다. 음원을 등록해야 게임을 시작할 수 있습니다.'
-            : `${setlist.songCount}곡으로 진행합니다. (재생 가능한 곡 ${setlist.playableCount}곡` +
-              (skipped > 0 ? `, 입력이 덜 된 ${skipped}곡은 제외` : '') +
-              ')';
+        if (isTextMode(setlist.mode)) {
+          el('setlist-summary').textContent = `${setlist.questionCount}문제로 진행합니다. 방마다 순서가 새로 섞입니다.`;
+        } else {
+          el('setlist-summary').textContent =
+            setlist.questionCount === 0
+              ? '재생 가능한 곡이 없습니다. 음원을 등록해야 게임을 시작할 수 있습니다.'
+              : `${setlist.questionCount}곡으로 진행합니다. (재생 가능한 곡 ${setlist.playableCount}곡` +
+                (skipped > 0 ? `, 입력이 덜 된 ${skipped}곡은 제외` : '') +
+                ')';
 
-        if (setlist.registrationIssues.length > 0) {
-          toast(`등록한 음원 중 ${setlist.registrationIssues.length}곡이 조건을 만족하지 않아 제외되었습니다.`);
+          if (setlist.registrationIssues.length > 0) {
+            toast(`등록한 음원 중 ${setlist.registrationIssues.length}곡이 조건을 만족하지 않아 제외되었습니다.`);
+          }
+          // The catalog changed: songs that just became playable should show it.
+          await loadCatalog(setupRoomId, hostToken);
         }
-        // The catalog changed: songs that just became playable should show it.
-        await loadCatalog(setupRoomId, hostToken);
       } catch (caught) {
         error.textContent = caught instanceof ApiError ? caught.message : '곡 설정을 저장하지 못했습니다.';
         error.hidden = false;
@@ -872,7 +1030,8 @@ function wire(): void {
         }
         // Joining early is fine — the host may still be picking songs — but say
         // so, otherwise the lobby looks broken when start does nothing.
-        if (!room.ready) toast('방장이 아직 곡을 고르는 중입니다. 대기실에서 기다려 주세요.');
+        if (!room.ready) toast('방장이 아직 문제를 고르는 중입니다. 대기실에서 기다려 주세요.');
+        else toast(`${MODE_LABEL[room.mode]} 방에 들어갑니다.`);
       } catch (caught) {
         toast(caught instanceof ApiError ? caught.message : '방을 확인하지 못했습니다.');
         return;
@@ -970,7 +1129,19 @@ function bootstrap(): void {
     el('invite-code').textContent = roomId;
     el<HTMLInputElement>('invite-link').value = inviteLink(roomId);
     showScreen('setup');
-    void loadCatalog(roomId, storedHost);
+    void (async () => {
+      // The mode lives on the room, not in this tab, so a refresh asks the
+      // server what it is rather than guessing from the radio buttons.
+      try {
+        const room = await lookupRoom(roomId);
+        setupMode = room.mode;
+      } catch {
+        // The lookup is a convenience; a failure leaves the song setup on
+        // screen, which is what the previous build always showed.
+      }
+      applySetupMode(setupMode);
+      if (!isTextMode(setupMode)) await loadCatalog(roomId, storedHost);
+    })();
     return;
   }
 

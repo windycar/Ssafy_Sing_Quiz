@@ -25,10 +25,13 @@
 import type {
   ClientMessage,
   ErrorReason,
+  GameMode,
   LeaderboardEntry,
   PlayerId,
   PlayerSummary,
   PlayerToken,
+  QuestionPublicInfo,
+  QuestionRevealInfo,
   RoomPhase,
   RoundScorer,
   ServerMessage,
@@ -66,6 +69,12 @@ const defaultSocketFactory: SocketFactory = (url) => new WebSocket(url) as unkno
 export type ConnectionStatus = 'idle' | 'connecting' | 'joined' | 'reconnecting' | 'closed';
 
 export interface RoundView {
+  /**
+   * What this round asks: mode, position, total, and — in a text mode — the
+   * proverb prefix or idiom meaning to put on screen. Never the answer.
+   */
+  question: QuestionPublicInfo;
+  /** Superseded by `question`; kept because it is what older UI code reads. */
   song: SongPublicInfo;
   mediaUrl: string;
   clipStartMs: number;
@@ -85,8 +94,11 @@ export interface RoundView {
 }
 
 export interface RevealView {
-  title: string;
-  artist: string;
+  /**
+   * The answer in whichever shape this mode has one. The first moment any of
+   * it exists on a client.
+   */
+  answer: QuestionRevealInfo;
   winner: { playerId: PlayerId; nickname: string } | null;
   /** Everyone who scored, first to last. Empty when nobody got it. */
   scorers: RoundScorer[];
@@ -102,6 +114,10 @@ export type AnswerFeedback =
 export interface ClientState {
   status: ConnectionStatus;
   phase: RoomPhase;
+  /** What this room plays. Known from the first `ROOM_STATE`, before any round. */
+  mode: GameMode;
+  /** How many questions the room will play in total. */
+  totalQuestions: number;
   roomId: string | null;
   playerId: PlayerId | null;
   isHost: boolean;
@@ -127,6 +143,10 @@ export function initialState(roomId: string | null = null): ClientState {
   return {
     status: 'idle',
     phase: 'LOBBY',
+    // A guess until the first ROOM_STATE says otherwise. The song game is the
+    // one a client that never hears back would have been showing anyway.
+    mode: 'song',
+    totalQuestions: 0,
     roomId,
     playerId: null,
     isHost: false,
@@ -179,6 +199,7 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         message.round === undefined
           ? null
           : {
+              question: message.round.question,
               song: message.round.song,
               mediaUrl: message.round.mediaUrl,
               clipStartMs: message.round.clipStartMs,
@@ -196,6 +217,8 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         ...state,
         status: 'joined',
         phase: message.phase,
+        mode: message.mode,
+        totalQuestions: message.totalQuestions,
         playerId: message.playerId,
         isHost: message.isHost,
         players: message.players,
@@ -240,8 +263,11 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         ...state,
         phase: 'IN_ROUND',
         countdownStartsAt: null,
+        mode: message.question.mode,
+        totalQuestions: message.question.totalQuestions,
         clockOffsetMs: sampleClock(state, message.serverStartedAt, receivedAt),
         round: {
+          question: message.question,
           song: message.song,
           mediaUrl: message.mediaUrl,
           clipStartMs: message.clipStartMs,
@@ -306,8 +332,7 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         ...state,
         phase: 'REVEAL',
         reveal: {
-          title: message.song.title,
-          artist: message.song.artist,
+          answer: message.answer,
           winner: message.winner,
           scorers: message.scorers,
         },

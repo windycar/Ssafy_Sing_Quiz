@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CreateRoomOptions, GameServer, RoomCreation } from './index.ts';
 import type { StaticHandler } from './staticFiles.ts';
 import type { CatalogIssue, MediaRegistration } from '../shared/songCatalog.ts';
+import { GAME_MODES, isGameMode } from '../shared/questions.ts';
 import { identifySongFromVideo, parseYouTubeLink } from '../shared/youtube.ts';
 import { lookupVideo } from './youtubeLookup.ts';
 
@@ -146,7 +147,16 @@ export function parseCreateRoomRequest(raw: unknown): ParseResult<CreateRoomOpti
 
   const options: CreateRoomOptions = {};
 
-  const { songCount, songIds, shuffle, media } = raw;
+  const { mode, songCount, songIds, shuffle, media } = raw;
+
+  // Rejected rather than defaulted: a host who typed a mode this build does
+  // not have should be told, not quietly given the song game.
+  if (mode !== undefined) {
+    if (!isGameMode(mode)) {
+      return { ok: false, message: `mode 는 ${GAME_MODES.join(', ')} 중 하나여야 합니다.` };
+    }
+    options.mode = mode;
+  }
 
   if (songCount !== undefined) {
     if (typeof songCount !== 'number' || !Number.isInteger(songCount) || songCount < 1 || songCount > MAX_SONGS_PER_GAME) {
@@ -487,9 +497,12 @@ async function handleApi(
     sendJson(response, 200, {
       roomId: room.roomId,
       phase: room.getPhase(),
+      // Safe to publish: which game is being played is not an answer to any of
+      // its questions, and a joining player needs it to know what to expect.
+      mode: room.getMode(),
       playerCount: game.connectedCount(roomId),
       joinable: room.getPhase() === 'LOBBY',
-      ready: room.getSongCount() > 0,
+      ready: room.getQuestionCount() > 0,
     });
     return;
   }
@@ -501,6 +514,8 @@ async function handleApi(
 function songSummary(created: RoomCreation, options: CreateRoomOptions): Record<string, unknown> {
   const registered = new Set((options.media ?? []).map((entry) => entry.id));
   return {
+    mode: created.mode,
+    questionCount: created.questionCount,
     songCount: created.songCount,
     playableCount: created.catalog.playable.length,
     issueCounts: summarizeIssues(created.catalog.issues),

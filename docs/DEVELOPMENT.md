@@ -71,7 +71,7 @@ npm.cmd run dev
 
 ```powershell
 cd shared
-npm.cmd test   # node --test *.test.ts — answerMatching, songCatalog 테스트
+npm.cmd test   # node --test *.test.ts — answerMatching, songCatalog, questions, youtube, playlist 테스트
 ```
 
 권위 게임 서버(`server/`)와 웹 클라이언트(`client/`)도 같은 방식으로 의존성
@@ -146,7 +146,9 @@ npx tsc --noEmit -p .
 
 의존성이 없으므로 실행과 테스트에는 `npm.cmd install`이 필요하지 않습니다
 (`tsc` 실행에만 TypeScript와 `@types/node`가 필요합니다). 현재 테스트는
-**177개**(`shared` 59개, `server` 97개, `client` 21개)이며 모두 통과해야 합니다.
+**253개**(`shared` 78개, `server` 143개, `client` 32개)이며 모두 통과해야
+합니다. `music-quiz/`는 빌드가 필요하므로 별도이며 **6개**입니다
+(`cd music-quiz && npm.cmd test`).
 Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 미만에서는 문법
 오류로 실패합니다.**
 
@@ -175,6 +177,9 @@ Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 �
 | `docs/USER_GUIDE.md` / `docs/SONG_DATA_GUIDE.md` / `docs/DEVELOPMENT.md` / `docs/OPERATIONS.md` | 사용자·데이터·개발·운영 가이드 (이 문서) |
 | `shared/answerMatching.ts` | 정답 정규화(NFKC, 소문자화, 문자/숫자만 남기기) 및 별칭 매칭 |
 | `shared/songCatalog.ts` | 원본 곡 레코드를 `SongConfig`로 검증·변환, 괄호 별칭 자동 확장, 방장 음원 등록 병합 |
+| `shared/questions.ts` | 세 모드 공용 `Question` 모델. 문제 은행 검증과, 정답 공개 전에 무엇이 나갈 수 있는지 정하는 유일한 함수(`toQuestionPublic`). 브라우저에서도 불러가므로 `node:` 모듈을 쓰지 않습니다 |
+| `data/proverbs.json`, `data/idioms.json` | 속담·사자성어 문제 은행 각 50문항. **서버에서만 읽습니다** — `shared/`와 달리 정적 서빙 대상이 아닙니다 |
+| `server/questionBanks.ts` | 위 두 파일을 시작할 때 한 번 읽어 검증. 잘못된 레코드가 있으면 조용히 건너뛰지 않고 서버가 뜨지 않습니다 |
 | `shared/youtube.ts` | 유튜브 링크 파싱, 영상 제목으로 곡 식별(짧은 제목은 가수까지 일치해야 인정), oEmbed 주소 생성 |
 | `shared/playlist.ts` | 플레이리스트 txt 파서. 잘못된 줄은 줄 번호와 함께 보고하고 나머지는 살립니다 |
 | `server/youtubeLookup.ts` | oEmbed로 영상 제목 조회. HTTP 라우트와 시작 시 로더가 같이 씁니다 |

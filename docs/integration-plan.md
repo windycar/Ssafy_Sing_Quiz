@@ -127,7 +127,7 @@ them as an explicit field at an explicit time; they cannot be inferred.
 
 | Value | Prototype | Protocol | Resolution |
 | --- | --- | --- | --- |
-| Points per win | +320 | +100 (`realtime-protocol.md` §5) | Pick one; §5 of the protocol is the declared single source of truth. |
+| Points per win | +320 | +1 per scoring place (`realtime-protocol.md` §5) | Resolved: §5 of the protocol is the single source of truth, and the implementation now scores 1 point per place — one place in a song round, three in a proverb or idiom round. |
 | Round length | 12 s, fixed | `clipDurationMs + ANSWER_GRACE_MS` | Server computes it; the lobby's "제한 시간 12초" becomes read-only or host-configurable via a real setting. |
 | Tie-break | `score`, then `correct` | equal scores share a rank | Protocol wins; the prototype's extra `correct` field is fine to keep as display data. |
 | Phases | `lobby / game / results` | `LOBBY / COUNTDOWN / IN_ROUND / REVEAL / FINISHED` | Client adds `COUNTDOWN` and distinguishes `IN_ROUND` from `REVEAL` (it currently overloads a `revealed` boolean). |

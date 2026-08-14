@@ -1078,7 +1078,7 @@ function wire(): void {
     const state = client?.getState();
     const left = state === undefined ? 0 : remainingInSection(state);
     const label = MODE_LABEL[state?.round?.question.mode ?? state?.mode ?? 'song'];
-    if (!confirm(`${label} 구간의 남은 ${left}문제를 건너뛰고 다음 구간으로 넘어갑니다. 계속할까요?`)) return;
+    if (!confirm(`${label} 챕터의 남은 ${left}문제를 건너뛰고 다음 챕터로 넘어갑니다. 계속할까요?`)) return;
     act(() => client?.hostSkipSection());
   });
 

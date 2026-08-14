@@ -686,7 +686,7 @@ export class GameRoom {
     const denied = this.authorizeHost(token, playerId);
     if (denied !== null) return [denied];
     if (this.phase === 'LOBBY' || this.phase === 'FINISHED') {
-      return [this.errorTo(playerId, 'WRONG_PHASE', '진행 중인 게임에서만 구간을 넘길 수 있습니다.')];
+      return [this.errorTo(playerId, 'WRONG_PHASE', '진행 중인 게임에서만 챕터를 넘길 수 있습니다.')];
     }
 
     const mode = this.getMode();

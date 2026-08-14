@@ -500,7 +500,7 @@ export default function Home() {
    */
   const onSkipSection = (): void => {
     const left = state === null ? 0 : remainingInSection(state);
-    if (!window.confirm(`${MODE_LABEL[mode]} 구간의 남은 ${left}문제를 건너뛰고 다음 구간으로 넘어갑니다. 계속할까요?`)) {
+    if (!window.confirm(`${MODE_LABEL[mode]} 챕터의 남은 ${left}문제를 건너뛰고 다음 챕터로 넘어갑니다. 계속할까요?`)) {
       return;
     }
     hostAction(() => clientRef.current?.hostSkipSection());
@@ -631,7 +631,7 @@ export default function Home() {
           </div>
 
           <div className="lobby-grid">
-            {/* 노래 구간에만 쓰입니다. 노래를 0문제로 두면 필요 없지만, 어느 곡이
+            {/* 노래 챕터에만 쓰입니다. 노래를 0문제로 두면 필요 없지만, 어느 곡이
                 왜 빠졌는지 확인하는 곳이기도 해서 항상 보여 줍니다. */}
             <section className="panel playlist-card">
                 <div className="panel-title">
@@ -661,8 +661,8 @@ export default function Home() {
                   <div>게임 설정</div>
                   <span className="host-only">HOST ONLY</span>
                 </div>
-                {/* 순서는 고정입니다. 방장이 정하는 것은 각 구간의 문제 수뿐이고,
-                    0을 넣으면 그 구간을 건너뜁니다. */}
+                {/* 순서는 고정입니다. 방장이 정하는 것은 각 챕터의 문제 수뿐이고,
+                    0을 넣으면 그 챕터를 건너뜁니다. */}
                 <p>아래 순서대로 한 판에 이어서 진행합니다.</p>
                 {SECTION_ORDER.map((option, index) => (
                   <div className="setting-row" key={option}>
@@ -1005,10 +1005,10 @@ export default function Home() {
                 >
                   {textMode ? "현재 문제 스킵" : "현재 곡 스킵"} <b>⇥</b>
                 </button>
-                {/* 이 구간의 남은 문제를 전부 건너뛰고 다음 구간으로 넘어갑니다.
-                    마지막 구간이면 게임이 끝납니다. */}
+                {/* 이 챕터의 남은 문제를 전부 건너뛰고 다음 챕터로 넘어갑니다.
+                    마지막 챕터면 게임이 끝납니다. */}
                 <button onClick={onSkipSection} disabled={!canEndGame}>
-                  구간 넘기기 <b>⏭</b>
+                  챕터 스킵 <b>⏭</b>
                 </button>
                 {/* 남은 문제를 전부 버리고 지금까지의 점수로 결산합니다.
                     되돌릴 수 없으므로 한 번 더 확인합니다. */}

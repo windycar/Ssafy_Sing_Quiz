@@ -174,7 +174,7 @@ button:disabled { cursor: not-allowed; opacity: .46; }
   있고, 어느 쪽인지는 서버가 알려 준 모드가 정합니다.
 */
 /* 게임 진행 순서. 고를 수 있는 컨트롤이 아니라 읽기 전용 목록입니다 — 순서는
-   고정이고, 방장이 정하는 것은 구간별 문제 수뿐입니다. */
+   고정이고, 방장이 정하는 것은 챕터별 문제 수뿐입니다. */
 .section-plan { border: 1px solid var(--line); margin: 12px 0 0; padding: 10px; display: grid; gap: 6px; list-style: none; counter-reset: section; }
 .section-plan li { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "step name" "step hint"; gap: 0 10px; align-items: center; padding: 8px; }
 .section-plan li::before { counter-increment: section; content: counter(section); grid-area: step; align-self: start; background: var(--violet); color: white; font: 900 10px Consolas, monospace; width: 20px; height: 20px; display: grid; place-items: center; }

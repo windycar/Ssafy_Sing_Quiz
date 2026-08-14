@@ -179,7 +179,7 @@ Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 �
 | `shared/songCatalog.ts` | 원본 곡 레코드를 `SongConfig`로 검증·변환, 괄호 별칭 자동 확장, 방장 음원 등록 병합 |
 | `shared/questions.ts` | 세 종류 공용 `Question` 모델과 진행 순서(`SECTION_ORDER`). 문제 은행 검증과, 정답 공개 전에 무엇이 나갈 수 있는지 정하는 유일한 함수(`toQuestionPublic`). 브라우저에서도 불러가므로 `node:` 모듈을 쓰지 않습니다 |
 | `data/proverbs.json`, `data/idioms.json` | 속담·사자성어 문제 은행 각 50문항. **서버에서만 읽습니다** — `shared/`와 달리 정적 서빙 대상이 아닙니다 |
-| `server/questionBanks.ts` | 문제 은행을 시작할 때 한 번 읽어 검증. `data/` 기본 파일이 잘못됐으면 서버가 뜨지 않고, 방장이 `문제/`에 둔 파일이 잘못됐으면 그 구간만 비우고 경고합니다 |
+| `server/questionBanks.ts` | 문제 은행을 시작할 때 한 번 읽어 검증. `data/` 기본 파일이 잘못됐으면 서버가 뜨지 않고, 방장이 `문제/`에 둔 파일이 잘못됐으면 그 챕터만 비우고 경고합니다 |
 | `server/localFiles.ts` | 방장이 고치는 세 파일이 `문제/`(`곡목록.txt`·`속담.json`·`사자성어.json`)에 있으면 그쪽을, 없으면 `data/` 기본 파일을 쓰도록 결정하는 유일한 지점 |
 | `shared/youtube.ts` | 유튜브 링크 파싱, 영상 제목으로 곡 식별(짧은 제목은 가수까지 일치해야 인정), oEmbed 주소 생성 |
 | `shared/playlist.ts` | 플레이리스트 txt 파서. 잘못된 줄은 줄 번호와 함께 보고하고 나머지는 살립니다 |

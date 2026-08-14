@@ -63,6 +63,29 @@ export const REVEAL_MS = 4_000;
  */
 export const TEXT_ROUND_MS = 30_000;
 /**
+ * How long a round stays frozen waiting for a host who dropped out.
+ *
+ * The round pauses the moment the host's socket closes, because nobody else can
+ * pause, skip, or advance it. What this constant adds is an end to that wait: a
+ * host whose phone died used to freeze the room for good, since `HOST_RESUME`
+ * needs a token that left with them.
+ *
+ * A minute covers the two things that actually happen — a page refresh and a
+ * walk out of Wi-Fi range — without holding twenty people on a still screen for
+ * longer than they will tolerate.
+ */
+export const HOST_GRACE_MS = 60_000;
+/**
+ * The same wait, for a round only the host's device can play.
+ *
+ * A YouTube round has no `mediaUrl`: the music comes out of the host's speakers
+ * and nowhere else (`livePlayback`, `shared/songCatalog.ts`). Resuming that
+ * without them would run a silent timer, so the only honest outcomes are to
+ * keep waiting or to end the game on the scores earned so far. Ending it is not
+ * reversible, which is why this wait is three times the other one.
+ */
+export const HOST_ABANDON_MS = 180_000;
+/**
  * Points by finishing place, first to last, per mode.
  *
  * Every place in every mode is worth one point. The spread across a game comes
@@ -137,6 +160,15 @@ interface Round {
   guessCounts: Map<PlayerId, number>;
 }
 
+/**
+ * What the pending timer is for.
+ *
+ * `HOST_GRACE` is the odd one out: the other three end a phase, while this one
+ * only decides how long the room waits for an absent host before it stops
+ * waiting. See `resolveHostAbsence`.
+ */
+type TimerKind = 'COUNTDOWN' | 'DEADLINE' | 'REVEAL' | 'HOST_GRACE';
+
 export interface CreateRoomOptions {
   roomId?: RoomId;
   hostToken?: HostToken;
@@ -175,10 +207,18 @@ export class GameRoom {
   private questions: readonly Question[];
   private round: Round | null = null;
   private hostPlayerId: PlayerId | null = null;
+  /**
+   * True when the current pause is the server's doing rather than the host's.
+   *
+   * The two look identical on the wire but must not behave the same on the
+   * host's return: an automatic pause is undone for them, a deliberate one is
+   * theirs to lift.
+   */
+  private autoPaused = false;
   private nextQuestionIndex = 0;
   /** When the engine next needs `tick()` called. Null means no pending timer. */
   private timerAt: number | null = null;
-  private timerKind: 'COUNTDOWN' | 'DEADLINE' | 'REVEAL' | null = null;
+  private timerKind: TimerKind | null = null;
 
   constructor(options: CreateRoomOptions) {
     // Join code is short and shareable; the host token is not. Different
@@ -254,9 +294,9 @@ export class GameRoom {
   handleMessage(message: ClientMessage, playerId: PlayerId | null, now: number): Effect[] {
     switch (message.type) {
       case 'JOIN_ROOM':
-        return this.handleJoin(message.nickname, now);
+        return this.handleJoin(message.nickname, message.hostToken, now);
       case 'REJOIN':
-        return this.handleRejoin(message.playerToken, now);
+        return this.handleRejoin(message.playerToken, message.hostToken, now);
       case 'SET_READY':
         return this.handleSetReady(playerId, message.ready);
       case 'SUBMIT_ANSWER':
@@ -290,6 +330,8 @@ export class GameRoom {
         return this.resolveRound(now);
       case 'REVEAL':
         return this.advanceAfterReveal(now);
+      case 'HOST_GRACE':
+        return this.resolveHostAbsence(now);
       default:
         return [];
     }
@@ -309,16 +351,85 @@ export class GameRoom {
     ];
 
     // With no host present nobody can pause, skip, or advance. Freeze instead
-    // of letting the round run unattended (analysis §5).
-    if (player.isHost && this.phase === 'IN_ROUND' && this.round !== null && !this.round.paused) {
-      effects.push(...this.pauseRound(now));
+    // of letting the round run unattended (analysis §5) — but on a clock, so
+    // the freeze cannot outlive the host. `HOST_RESUME` needs a token that just
+    // left the building, so without this timer the room is stuck for good.
+    //
+    // A host who paused deliberately and then dropped gets the same clock: the
+    // pause was theirs, the absence is not, and it is the absence that decides
+    // how long everyone else waits.
+    if (player.isHost && this.phase === 'IN_ROUND' && this.round !== null) {
+      const graceMs = this.roundNeedsHost() ? HOST_ABANDON_MS : HOST_GRACE_MS;
+      const endsAt = now + graceMs;
+      if (this.round.paused) {
+        // Already stopped by the host's own hand. Re-announced so the screens
+        // stop saying "the host paused this" and start saying how long the
+        // room is waiting for them.
+        const pausedAt = this.round.pausedAt ?? now;
+        effects.push({
+          kind: 'broadcast',
+          message: { type: 'ROUND_PAUSED', pausedAt, hostAway: true, hostGraceEndsAt: endsAt },
+        });
+      } else {
+        effects.push(...this.pauseRound(now, endsAt));
+        this.autoPaused = true;
+      }
+      this.setTimer(endsAt, 'HOST_GRACE');
     }
     return effects;
   }
 
+  /**
+   * True when this round cannot be played without the host's own device.
+   *
+   * A YouTube round is broadcast with an empty `mediaUrl`: the video id goes to
+   * the host alone, so their speakers are the only copy of the music in the
+   * room. Every other round — text modes, and songs with a per-client
+   * `mediaUrl` — plays on each player's own device and needs the host only for
+   * the controls.
+   */
+  private roundNeedsHost(): boolean {
+    const question = this.round?.question;
+    return question !== undefined && question.mode === 'song' && question.song.youtubeId !== null;
+  }
+
+  /**
+   * The host did not come back. Stop waiting.
+   *
+   * Which way this goes is decided by whether anyone can still play the round.
+   * Where the answer is yes, the round resumes and the game runs to the end
+   * unattended: every remaining transition is on a server timer, and only
+   * `HOST_START` ever needed a host. Where the answer is no — the host's device
+   * was the only source of the music — the game ends on the scores already
+   * earned, which beats twenty silent rounds nobody can answer.
+   */
+  private resolveHostAbsence(now: number): Effect[] {
+    const round = this.round;
+    if (round === null || this.phase !== 'IN_ROUND' || !round.paused) return [];
+    return this.roundNeedsHost() ? this.endGame() : this.resumeRound(now);
+  }
+
+  /** Whoever holds the host token is back. Stop the clock on their absence. */
+  private cancelHostGrace(now: number): Effect[] {
+    const round = this.round;
+    if (this.timerKind !== 'HOST_GRACE' || round === null) return [];
+    this.clearTimer();
+
+    // A pause the host chose stays until they lift it; one the server imposed
+    // on their behalf is undone the moment the reason for it is gone.
+    if (this.autoPaused) return this.resumeRound(now);
+
+    // Still paused, but no longer counting down to anything. Said out loud,
+    // because every screen is currently showing a countdown that just stopped
+    // being true — and nothing else would ever correct it.
+    return [
+      { kind: 'broadcast', message: { type: 'ROUND_PAUSED', pausedAt: round.pausedAt ?? now } },
+    ];
+  }
+
   // --- Lobby ---------------------------------------------------------------
 
-  private handleJoin(rawNickname: string, now: number): Effect[] {
+  private handleJoin(rawNickname: string, hostToken: HostToken | undefined, now: number): Effect[] {
     if (this.phase !== 'LOBBY') {
       return [this.errorTo(null, 'GAME_ALREADY_STARTED', '게임이 이미 시작되어 참여할 수 없습니다.')];
     }
@@ -339,12 +450,12 @@ export class GameRoom {
       ready: false,
       score: 0,
       roundsWon: 0,
-      // First player through the door owns the room.
-      isHost: this.hostPlayerId === null,
+      // Set by `claimHost` below, and only for a player who proved the token.
+      isHost: false,
     };
     this.players.set(player.id, player);
     this.tokenIndex.set(player.token, player.id);
-    if (player.isHost) this.hostPlayerId = player.id;
+    this.claimHost(player, hostToken);
 
     const effects: Effect[] = [
       { kind: 'send', to: player.id, message: this.buildRoomState(player, now) },
@@ -353,6 +464,29 @@ export class GameRoom {
     const cue = this.cueFor(player);
     if (cue !== null) effects.push(cue);
     return effects;
+  }
+
+  /**
+   * Seats this player as the host, if they can prove it.
+   *
+   * Host is a property of the token, not of arriving first. Join order used to
+   * decide it, which broke in both directions: an invited friend who opened the
+   * link before the host became the room's host — collecting the `ROUND_CUE`
+   * that names the video, so the music played on the wrong device — and their
+   * leaving then froze a round the real host was sitting right there for.
+   *
+   * The seat moves rather than being shared, so the host opening the link on a
+   * second device takes their own controls with them instead of leaving a stale
+   * record behind that would pause the room when that tab is closed.
+   */
+  private claimHost(player: Player, hostToken: HostToken | undefined): void {
+    if (hostToken === undefined || !this.authorize(hostToken)) return;
+    if (this.hostPlayerId !== null && this.hostPlayerId !== player.id) {
+      const previous = this.players.get(this.hostPlayerId);
+      if (previous !== undefined) previous.isHost = false;
+    }
+    player.isHost = true;
+    this.hostPlayerId = player.id;
   }
 
   /**
@@ -381,7 +515,7 @@ export class GameRoom {
     };
   }
 
-  private handleRejoin(token: PlayerToken, now: number): Effect[] {
+  private handleRejoin(token: PlayerToken, hostToken: HostToken | undefined, now: number): Effect[] {
     const playerId = this.tokenIndex.get(token);
     const player = playerId === undefined ? undefined : this.players.get(playerId);
     if (player === undefined) {
@@ -390,6 +524,13 @@ export class GameRoom {
 
     const wasConnected = player.connected;
     player.connected = true;
+    // A session seated before the host link was opened on this device can still
+    // become the host, without having to leave the room and rejoin.
+    this.claimHost(player, hostToken);
+
+    // Built before the snapshot would be, so a host returning inside the grace
+    // period gets a state that already says the round is running again.
+    const returned = player.isHost ? this.cancelHostGrace(now) : [];
 
     const effects: Effect[] = [{ kind: 'send', to: player.id, message: this.buildRoomState(player, now) }];
     if (!wasConnected) {
@@ -398,6 +539,7 @@ export class GameRoom {
         message: { type: 'PLAYER_CONNECTION_CHANGED', playerId: player.id, connected: true },
       });
     }
+    effects.push(...returned);
     const cue = this.cueFor(player);
     if (cue !== null) effects.push(cue);
     return effects;
@@ -459,12 +601,27 @@ export class GameRoom {
     if (this.phase !== 'IN_ROUND' || round === null || !round.paused || round.pausedAt === null) {
       return [this.errorTo(playerId, 'WRONG_PHASE', '지금은 재개할 수 없습니다.')];
     }
+    return this.resumeRound(now);
+  }
+
+  /**
+   * Restarts the answer window, however it came to be stopped.
+   *
+   * Shared by the host's own resume and by the two ways the server lifts a
+   * pause on its own: the host reconnecting, and the grace period running out.
+   * All three have to adjust the deadline identically, which is why there is
+   * one of these and not three.
+   */
+  private resumeRound(now: number): Effect[] {
+    const round = this.round;
+    if (round === null || !round.paused || round.pausedAt === null) return [];
 
     // The only place round time is ever adjusted. Pause/resume therefore
     // suspends the answer window without lengthening or shortening it.
     round.deadline += now - round.pausedAt;
     round.paused = false;
     round.pausedAt = null;
+    this.autoPaused = false;
     this.setTimer(round.deadline, 'DEADLINE');
     return [{ kind: 'broadcast', message: { type: 'ROUND_RESUMED', newDeadline: round.deadline } }];
   }
@@ -480,13 +637,23 @@ export class GameRoom {
     return this.resolveRound(now);
   }
 
-  private pauseRound(now: number): Effect[] {
+  /**
+   * @param hostGraceEndsAt Set only when the host's absence is what stopped the
+   *   round, and it says when the server will stop waiting for them. A host
+   *   pressing pause passes nothing: that pause has no deadline.
+   */
+  private pauseRound(now: number, hostGraceEndsAt?: number): Effect[] {
     const round = this.round;
     if (round === null || round.paused) return [];
     round.paused = true;
     round.pausedAt = now;
     this.clearTimer();
-    return [{ kind: 'broadcast', message: { type: 'ROUND_PAUSED', pausedAt: now } }];
+
+    const message: ServerMessage =
+      hostGraceEndsAt === undefined
+        ? { type: 'ROUND_PAUSED', pausedAt: now }
+        : { type: 'ROUND_PAUSED', pausedAt: now, hostAway: true, hostGraceEndsAt };
+    return [{ kind: 'broadcast', message }];
   }
 
   // --- Answering -----------------------------------------------------------
@@ -567,6 +734,9 @@ export class GameRoom {
 
     round.resolved = true;
     this.clearTimer();
+    // Drops any armed host-absence timer with it: the round it was waiting on
+    // is over, so there is nothing left to resume or abandon.
+    this.autoPaused = false;
     this.phase = 'REVEAL';
 
     const effects: Effect[] = [];
@@ -606,11 +776,18 @@ export class GameRoom {
     return effects;
   }
 
+  /** Ends the game where it stands and reports the standings as final. */
+  private endGame(): Effect[] {
+    this.phase = 'FINISHED';
+    this.round = null;
+    this.autoPaused = false;
+    this.clearTimer();
+    return [{ kind: 'broadcast', message: { type: 'GAME_OVER', finalRanks: this.buildLeaderboard() } }];
+  }
+
   private advanceAfterReveal(now: number): Effect[] {
     if (this.nextQuestionIndex >= this.questions.length) {
-      this.phase = 'FINISHED';
-      this.round = null;
-      return [{ kind: 'broadcast', message: { type: 'GAME_OVER', finalRanks: this.buildLeaderboard() } }];
+      return this.endGame();
     }
     this.phase = 'COUNTDOWN';
     this.setTimer(now + COUNTDOWN_MS, 'COUNTDOWN');
@@ -734,7 +911,9 @@ export class GameRoom {
    * directly, because reading it directly is exactly how a future field ends
    * up on the wire before the reveal.
    */
-  private publicRound(round: Round): Omit<RoundPublicState, 'serverStartedAt' | 'deadline' | 'paused' | 'pausedAt'> {
+  private publicRound(
+    round: Round,
+  ): Omit<RoundPublicState, 'serverStartedAt' | 'deadline' | 'paused' | 'pausedAt' | 'hostAway' | 'hostGraceEndsAt'> {
     const question = toQuestionPublic(round.question, round.index, this.questions.length, round.durationMs);
 
     if (round.question.mode === 'song') {
@@ -766,12 +945,17 @@ export class GameRoom {
     const round = this.round;
     let roundState: RoundPublicState | undefined;
     if (round !== null && this.phase === 'IN_ROUND') {
+      // The armed grace timer *is* the record of an absent host, so a snapshot
+      // reads it rather than a second copy that could drift out of step.
+      const hostAway = this.timerKind === 'HOST_GRACE';
       roundState = {
         ...this.publicRound(round),
         serverStartedAt: round.startedAt,
         deadline: round.deadline,
         paused: round.paused,
         pausedAt: round.pausedAt,
+        hostAway,
+        hostGraceEndsAt: hostAway ? this.timerAt : null,
       };
     }
 
@@ -819,7 +1003,7 @@ export class GameRoom {
     return { kind: 'send', to: playerId ?? '', message: error };
   }
 
-  private setTimer(at: number, kind: 'COUNTDOWN' | 'DEADLINE' | 'REVEAL'): void {
+  private setTimer(at: number, kind: TimerKind): void {
     this.timerAt = at;
     this.timerKind = kind;
   }

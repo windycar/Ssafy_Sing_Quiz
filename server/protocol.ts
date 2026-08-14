@@ -76,6 +76,13 @@ export interface RoundPublicState {
   deadline: number;
   paused: boolean;
   pausedAt: number | null;
+  /** True while the round is frozen because the host's socket dropped. */
+  hostAway: boolean;
+  /**
+   * When the server stops waiting for an absent host, or null when it is not
+   * waiting for one. See `RoundPausedMessage.hostGraceEndsAt`.
+   */
+  hostGraceEndsAt: number | null;
   /** See `RoundStartMessage.livePlayback`. */
   livePlayback: boolean;
 }
@@ -88,12 +95,20 @@ export interface JoinRoomMessage {
   type: 'JOIN_ROOM';
   roomId: RoomId;
   nickname: string;
+  /**
+   * Present only on the host's own client, which holds the token from room
+   * creation. This is what makes the joining player the host — join order does
+   * not, or an invited friend arriving first would take the room over.
+   */
+  hostToken?: HostToken;
 }
 
 export interface RejoinMessage {
   type: 'REJOIN';
   roomId: RoomId;
   playerToken: PlayerToken;
+  /** Same claim as `JoinRoomMessage.hostToken`, for a session already seated. */
+  hostToken?: HostToken;
 }
 
 export interface SetReadyMessage {
@@ -226,6 +241,20 @@ export interface RoundCueMessage {
 export interface RoundPausedMessage {
   type: 'ROUND_PAUSED';
   pausedAt: number;
+  /**
+   * True when the server paused on its own because the host's socket dropped,
+   * false when the host pressed pause. A client shows a different thing for
+   * each: one is an outage, the other is somebody taking a break.
+   */
+  hostAway?: boolean;
+  /**
+   * When the server stops waiting for the host, present only alongside
+   * `hostAway`. At that moment the round either resumes without a host or, if
+   * the host's device is the only source of the music, the game ends — see
+   * `GameRoom.resolveHostAbsence`. Sent so a client can count it down rather
+   * than leave players staring at a frozen screen.
+   */
+  hostGraceEndsAt?: number;
 }
 
 export interface RoundResumedMessage {
@@ -358,12 +387,19 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
   const candidate = value as Record<string, unknown>;
   const isString = (key: string): boolean => typeof candidate[key] === 'string';
+  // Absent is the normal case — only the host's own client sends one — but a
+  // present-and-not-a-string value is a malformed frame, not an absent claim.
+  const isOptionalString = (key: string): boolean => candidate[key] === undefined || isString(key);
 
   switch (candidate['type']) {
     case 'JOIN_ROOM':
-      return isString('roomId') && isString('nickname') ? (candidate as unknown as JoinRoomMessage) : null;
+      return isString('roomId') && isString('nickname') && isOptionalString('hostToken')
+        ? (candidate as unknown as JoinRoomMessage)
+        : null;
     case 'REJOIN':
-      return isString('roomId') && isString('playerToken') ? (candidate as unknown as RejoinMessage) : null;
+      return isString('roomId') && isString('playerToken') && isOptionalString('hostToken')
+        ? (candidate as unknown as RejoinMessage)
+        : null;
     case 'SET_READY':
       return typeof candidate['ready'] === 'boolean' ? (candidate as unknown as SetReadyMessage) : null;
     case 'SUBMIT_ANSWER':

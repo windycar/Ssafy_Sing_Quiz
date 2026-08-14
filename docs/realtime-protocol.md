@@ -105,8 +105,8 @@ interface LeaderboardEntry {
 
 | `type`            | Sent by | Valid phases           | Payload |
 | ------------------ | ------- | ----------------------- | ------- |
-| `JOIN_ROOM`         | player  | `LOBBY`                 | `{ type: 'JOIN_ROOM'; roomId: RoomId; nickname: string }` |
-| `REJOIN`            | player/host | any                  | `{ type: 'REJOIN'; roomId: RoomId; playerToken: PlayerToken }` |
+| `JOIN_ROOM`         | player  | `LOBBY`                 | `{ type: 'JOIN_ROOM'; roomId: RoomId; nickname: string; hostToken?: HostToken }` |
+| `REJOIN`            | player/host | any                  | `{ type: 'REJOIN'; roomId: RoomId; playerToken: PlayerToken; hostToken?: HostToken }` |
 | `SET_READY`         | player  | `LOBBY`                 | `{ type: 'SET_READY'; ready: boolean }` |
 | `SUBMIT_ANSWER`     | player  | `IN_ROUND`               | `{ type: 'SUBMIT_ANSWER'; guess: string }` |
 | `HOST_START`        | host    | `LOBBY`                 | `{ type: 'HOST_START'; hostToken: HostToken }` |
@@ -125,6 +125,15 @@ Notes:
 - Every message the server receives is authorized independently — a stale
   or mismatched `hostToken`/`playerToken` is rejected with `ERROR`, it is
   never inferred from "whoever is currently connected."
+- The optional `hostToken` on `JOIN_ROOM`/`REJOIN` is what seats a player as
+  the host, and it is the *only* thing that does. Join order does not: an
+  invited player who opened the link first would otherwise take the room,
+  collect the `ROUND_CUE` that names the video, and freeze the round on their
+  way out. A join carrying no token, or a wrong one, is seated as an ordinary
+  player — it is never an error, because a player is not making a claim. The
+  seat moves to the most recent holder, so opening the host link on a second
+  device takes the controls there rather than leaving a stale host record
+  behind.
 - The server ignores (silently no-ops, does not error) actions that are
   syntactically valid but phase-inappropriate for a *player* action arriving
   slightly late due to network lag — e.g. a `SUBMIT_ANSWER` that arrives
@@ -142,7 +151,7 @@ Notes:
 | `PLAYER_CONNECTION_CHANGED` | broadcast         | `{ type: 'PLAYER_CONNECTION_CHANGED'; playerId: PlayerId; connected: boolean }` |
 | `PLAYER_READY_CHANGED` | broadcast              | `{ type: 'PLAYER_READY_CHANGED'; playerId: PlayerId; ready: boolean }` |
 | `ROUND_START`          | broadcast              | `{ type: 'ROUND_START'; question: QuestionPublicInfo; song: SongPublicInfo; mediaUrl: string; clipStartMs: number; clipEndMs: number; serverStartedAt: number; deadline: number; livePlayback: boolean }`. In a text mode `mediaUrl` is `''` and `livePlayback` is false. |
-| `ROUND_PAUSED`         | broadcast              | `{ type: 'ROUND_PAUSED'; pausedAt: number }` |
+| `ROUND_PAUSED`         | broadcast              | `{ type: 'ROUND_PAUSED'; pausedAt: number; hostAway?: boolean; hostGraceEndsAt?: number }`. The last two are present only when the server paused on its own because the host's socket dropped; a host pressing pause sends neither. |
 | `ROUND_RESUMED`        | broadcast              | `{ type: 'ROUND_RESUMED'; newDeadline: number }` |
 | `ANSWER_ACCEPTED`      | private, to winner     | `{ type: 'ANSWER_ACCEPTED'; pointsAwarded: number }` |
 | `ANSWER_REJECTED`      | private, to sender     | `{ type: 'ANSWER_REJECTED'; guess: string }` |
@@ -162,8 +171,31 @@ interface RoundPublicState {
   deadline: number;        // epoch ms, server clock; extended on resume
   paused: boolean;
   pausedAt: number | null;
+  hostAway: boolean;             // the pause is an outage, not a break
+  hostGraceEndsAt: number | null; // epoch ms; when the server stops waiting
 }
 ```
+
+### An absent host
+
+The round pauses the moment the host's socket closes: with nobody holding the
+token, nobody can pause, skip, or advance it. That pause is on a clock, because
+`HOST_RESUME` needs a token that left with the host, and a freeze that outlives
+them is a room stuck for good.
+
+- The host reconnecting inside the grace period resumes the round
+  automatically, and the deadline is extended by exactly the outage. A pause
+  the host *chose* before dropping is not lifted for them — that one is theirs.
+- The grace period running out resumes the round without a host. Every
+  remaining transition runs on a server timer; only `HOST_START` ever needed a
+  host, so the game plays through to `GAME_OVER` unattended.
+- Where the round is a YouTube one, the host's device is the only source of the
+  music (`livePlayback`, empty `mediaUrl`). Resuming would run a silent timer,
+  so the wait is three times as long and ends in `GAME_OVER` on the scores
+  already earned rather than in a resume.
+
+`HOST_GRACE_MS` and `HOST_ABANDON_MS` in `server/gameRoom.ts` are the two
+waits, and that file is the only place they are defined.
 
 `LEADERBOARD_UPDATE` is described as broadcast in the table for brevity, but
 per the product requirement ("top five plus the current player's own rank")
@@ -186,6 +218,9 @@ Each row is `(current phase, trigger) -> (next phase, server action)`.
 | `IN_ROUND` | `HOST_SKIP` | `REVEAL` | Same as timeout path — treat skip as an immediate, host-triggered timeout (winner is whatever was already locked in, if any race with a just-arrived correct answer is resolved by processing order, not skip priority). |
 | `IN_ROUND` (not paused) | `HOST_PAUSE` | `IN_ROUND` (paused) | Clear the deadline timer, record `pausedAt = now`, broadcast `ROUND_PAUSED`. Guesses are ignored while paused (see §2). |
 | `IN_ROUND` (paused) | `HOST_RESUME` | `IN_ROUND` (not paused) | `deadline += now - pausedAt`; reschedule the deadline timer; broadcast `ROUND_RESUMED`. |
+| `IN_ROUND` | the host's socket closes | `IN_ROUND` (paused) | Pause if it was running, and arm the host-grace timer either way: `HOST_ABANDON_MS` when the round is a YouTube one, `HOST_GRACE_MS` otherwise. Broadcast `ROUND_PAUSED` with `hostAway` and `hostGraceEndsAt`. |
+| `IN_ROUND` (paused, host away) | the host reconnects | `IN_ROUND` | Drop the host-grace timer. Resume as `HOST_RESUME` would, unless the host had pressed pause before dropping — that pause is theirs to lift. |
+| `IN_ROUND` (paused, host away) | the host-grace timer elapses | `IN_ROUND` or `FINISHED` | Resume as `HOST_RESUME` would, and the game runs out on server timers alone. Where the round is a YouTube one there is no music without the host, so instead: compute `finalRanks` and broadcast `GAME_OVER`. |
 | `REVEAL` | fixed timer elapses (e.g. 4000ms) | `IN_ROUND` (next question) or `FINISHED` | If more questions remain: advance the index, repeat the `COUNTDOWN`→`IN_ROUND` setup (this table folds the brief COUNTDOWN into this step for brevity — implementer may reintroduce an explicit COUNTDOWN broadcast here). If this was the last one: compute `finalRanks`, broadcast `GAME_OVER`. |
 | `FINISHED` | — | — | Terminal. Room accepts `REJOIN` (read-only) until garbage-collected per analysis §8; no further phase transitions. |
 

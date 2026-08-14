@@ -7,6 +7,8 @@ import {
   COUNTDOWN_MS,
   REVEAL_MS,
   TEXT_ROUND_MS,
+  HOST_GRACE_MS,
+  HOST_ABANDON_MS,
   POINTS_PER_WIN,
   POINTS_BY_PLACE,
   scorersPerRound,
@@ -75,14 +77,34 @@ function errorReasonOf(effects: Effect[]): string | undefined {
 }
 
 /** Joins a player and returns their id and token. */
-function join(room: GameRoom, nickname: string, now: number): { id: PlayerId; token: string } {
-  const effects = room.handleMessage({ type: 'JOIN_ROOM', roomId: room.roomId, nickname }, null, now);
+function join(
+  room: GameRoom,
+  nickname: string,
+  now: number,
+  hostToken?: string,
+): { id: PlayerId; token: string } {
+  const effects = room.handleMessage(
+    { type: 'JOIN_ROOM', roomId: room.roomId, nickname, ...(hostToken === undefined ? {} : { hostToken }) },
+    null,
+    now,
+  );
   const state = firstOfType(
     effects.filter((e): e is Extract<Effect, { kind: 'send' }> => e.kind === 'send').map((e) => e.message),
     'ROOM_STATE',
   );
   assert.ok(state, `join failed for ${nickname}`);
   return { id: state.playerId, token: state.playerToken };
+}
+
+/**
+ * Joins the player who holds the host token.
+ *
+ * Which player is the host is not a function of join order — see `claimHost` —
+ * so a test that needs a seated host has to present the token, exactly as the
+ * host's own browser does.
+ */
+function joinHost(room: GameRoom, nickname: string, now: number): { id: PlayerId; token: string } {
+  return join(room, nickname, now, room.hostToken);
 }
 
 /** Starts the game and runs the countdown so the first round is live. */
@@ -165,19 +187,59 @@ test('an unusable nickname is rejected with INVALID_NICKNAME', () => {
 
 // --- Lobby and phase gating -------------------------------------------------
 
-test('the first player to join becomes the host', () => {
+test('the host token decides who is host, not who arrived first', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
-  const guest = join(room, '참가자', 1_001);
-  const hostState = room.handleMessage({ type: 'REJOIN', roomId: room.roomId, playerToken: host.token }, null, 1_002);
-  const guestState = room.handleMessage({ type: 'REJOIN', roomId: room.roomId, playerToken: guest.token }, null, 1_003);
+  // The invited friend opens the link before the host does. Join order used to
+  // hand them the room, and with it the ROUND_CUE that names the video.
+  const early = join(room, '먼저온사람', 1_000);
+  const host = joinHost(room, '방장', 1_001);
+
+  const earlyState = room.handleMessage({ type: 'REJOIN', roomId: room.roomId, playerToken: early.token }, null, 1_002);
+  const hostState = room.handleMessage({ type: 'REJOIN', roomId: room.roomId, playerToken: host.token }, null, 1_003);
+  assert.equal(firstOfType(privateMessagesFor(earlyState, early.id), 'ROOM_STATE')?.isHost, false);
   assert.equal(firstOfType(privateMessagesFor(hostState, host.id), 'ROOM_STATE')?.isHost, true);
-  assert.equal(firstOfType(privateMessagesFor(guestState, guest.id), 'ROOM_STATE')?.isHost, false);
+});
+
+test('a join carrying a wrong host token is seated as an ordinary player', () => {
+  const room = newRoom();
+  const impostor = join(room, '사칭', 1_000, 'not-the-host-token');
+  const state = room.handleMessage(
+    { type: 'REJOIN', roomId: room.roomId, playerToken: impostor.token },
+    null,
+    1_001,
+  );
+  assert.equal(firstOfType(privateMessagesFor(state, impostor.id), 'ROOM_STATE')?.isHost, false);
+});
+
+test('opening the host link on a second device moves the host seat', () => {
+  const room = newRoom();
+  const phone = joinHost(room, '방장폰', 1_000);
+  const laptop = joinHost(room, '방장노트북', 1_001);
+
+  const phoneState = room.handleMessage({ type: 'REJOIN', roomId: room.roomId, playerToken: phone.token }, null, 1_002);
+  const laptopState = room.handleMessage(
+    { type: 'REJOIN', roomId: room.roomId, playerToken: laptop.token },
+    null,
+    1_003,
+  );
+  assert.equal(firstOfType(privateMessagesFor(phoneState, phone.id), 'ROOM_STATE')?.isHost, false);
+  assert.equal(firstOfType(privateMessagesFor(laptopState, laptop.id), 'ROOM_STATE')?.isHost, true);
+});
+
+test('a rejoin can claim the host seat for a session already at the table', () => {
+  const room = newRoom();
+  const player = join(room, '나중에방장', 1_000);
+  const effects = room.handleMessage(
+    { type: 'REJOIN', roomId: room.roomId, playerToken: player.token, hostToken: room.hostToken },
+    null,
+    1_001,
+  );
+  assert.equal(firstOfType(privateMessagesFor(effects, player.id), 'ROOM_STATE')?.isHost, true);
 });
 
 test('joining after the game has started is refused', () => {
   const room = newRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
 
   const effects = room.handleMessage({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '지각' }, null, 3_000);
@@ -193,7 +255,7 @@ test('the room refuses a 21st player', () => {
 
 test('the game cannot start with no playable songs', () => {
   const room = new GameRoom({ mode: 'song', questions: [], now: 1_000 });
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const effects = room.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 2_000);
   assert.equal(errorReasonOf(effects), 'NOT_ENOUGH_PLAYERS');
   assert.equal(room.getPhase(), 'LOBBY');
@@ -201,7 +263,7 @@ test('the game cannot start with no playable songs', () => {
 
 test('phase advances LOBBY -> COUNTDOWN -> IN_ROUND on the server timer', () => {
   const room = newRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   assert.equal(room.getPhase(), 'LOBBY');
 
   room.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 2_000);
@@ -220,7 +282,7 @@ test('phase advances LOBBY -> COUNTDOWN -> IN_ROUND on the server timer', () => 
 
 test('host actions require the host token, not merely being connected', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   const effects = room.handleMessage({ type: 'HOST_START', hostToken: 'guessed-token' }, host.id, 2_000);
   assert.equal(errorReasonOf(effects), 'NOT_HOST');
   assert.equal(room.getPhase(), 'LOBBY');
@@ -228,7 +290,7 @@ test('host actions require the host token, not merely being connected', () => {
 
 test('host actions outside their valid phase return an explicit error', () => {
   const room = newRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const effects = room.handleMessage({ type: 'HOST_PAUSE', hostToken: room.hostToken }, null, 2_000);
   assert.equal(errorReasonOf(effects), 'WRONG_PHASE');
 });
@@ -244,7 +306,7 @@ test('the room join code and the host token are different secrets', () => {
 
 test('ROUND_START never carries the title, artist, or aliases', () => {
   const room = newRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const effects = startFirstRound(room, 2_000);
 
   const start = firstOfType(broadcasts(effects), 'ROUND_START');
@@ -530,7 +592,7 @@ for (const [mode, bank] of [
 
 test('a wrong answer is private to the guesser', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   join(room, '남', 1_001);
   startFirstRound(room, 2_000);
 
@@ -546,7 +608,7 @@ test('a wrong answer is private to the guesser', () => {
 
 test('guesses are rate-limited per player per round', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const at = 2_000 + COUNTDOWN_MS + 10;
 
@@ -565,7 +627,7 @@ test('guesses are rate-limited per player per round', () => {
 
 test('a guess arriving during REVEAL is acknowledged as late, not scored', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const roundStart = 2_000 + COUNTDOWN_MS;
 
@@ -580,14 +642,14 @@ test('a guess arriving during REVEAL is acknowledged as late, not scored', () =>
 
 test('a guess during COUNTDOWN is silently ignored', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   room.handleMessage({ type: 'HOST_START', hostToken: room.hostToken }, null, 2_000);
   assert.deepEqual(room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, host.id, 2_100), []);
 });
 
 test('a timeout reveals the answer with no winner', () => {
   const room = newRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
 
   const effects = room.tick(2_000 + COUNTDOWN_MS + ROUND_MS);
@@ -603,7 +665,7 @@ test('a timeout reveals the answer with no winner', () => {
 
 test('pause and resume preserve the remaining answer time exactly', () => {
   const room = newRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const startEffects = startFirstRound(room, 2_000);
   const originalDeadline = firstOfType(broadcasts(startEffects), 'ROUND_START')?.deadline;
   assert.ok(originalDeadline);
@@ -623,7 +685,7 @@ test('pause and resume preserve the remaining answer time exactly', () => {
 
 test('guesses are ignored while the round is paused', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const roundStart = 2_000 + COUNTDOWN_MS;
 
@@ -632,20 +694,232 @@ test('guesses are ignored while the round is paused', () => {
   assert.equal(room.getPlayer(host.id)?.score, 0);
 });
 
-test('the host disconnecting mid-round freezes the timer', () => {
+// --- An absent host ---------------------------------------------------------
+
+test('the host disconnecting mid-round freezes the answer window', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const roundStart = 2_000 + COUNTDOWN_MS;
 
   const effects = room.handleDisconnect(host.id, roundStart + 1_000);
-  assert.ok(firstOfType(broadcasts(effects), 'ROUND_PAUSED'));
-  assert.equal(room.getTimer(), null);
+  const paused = firstOfType(broadcasts(effects), 'ROUND_PAUSED');
+  assert.ok(paused);
+  assert.equal(paused.hostAway, true, 'players must be able to tell an outage from a break');
+  assert.equal(paused.hostGraceEndsAt, roundStart + 1_000 + HOST_GRACE_MS);
+  // The deadline is gone, but the room is not left with nothing pending: what
+  // is armed now is the clock on the host's absence.
+  assert.deepEqual(room.getTimer(), { at: roundStart + 1_000 + HOST_GRACE_MS, kind: 'HOST_GRACE' });
+});
+
+test('a player disconnecting mid-round does not pause anything', () => {
+  const room = newRoom();
+  joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  startFirstRound(room, 2_000);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+
+  const effects = room.handleDisconnect(guest.id, roundStart + 1_000);
+  assert.equal(firstOfType(broadcasts(effects), 'ROUND_PAUSED'), undefined);
+  assert.deepEqual(room.getTimer(), { at: roundStart + ROUND_MS, kind: 'DEADLINE' });
+});
+
+test('the player who merely joined first leaving does not pause the round', () => {
+  // The regression this whole change exists for: an invited friend arriving
+  // before the host used to be the host, so their leaving froze a round the
+  // real host was present for and could not un-freeze from the other side.
+  const room = newRoom();
+  const early = join(room, '먼저온사람', 1_000);
+  joinHost(room, '방장', 1_001);
+  startFirstRound(room, 2_000);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+
+  const effects = room.handleDisconnect(early.id, roundStart + 1_000);
+  assert.equal(firstOfType(broadcasts(effects), 'ROUND_PAUSED'), undefined);
+  assert.deepEqual(room.getTimer(), { at: roundStart + ROUND_MS, kind: 'DEADLINE' });
+});
+
+test('the host returning inside the grace period resumes the round automatically', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const startEffects = startFirstRound(room, 2_000);
+  const originalDeadline = firstOfType(broadcasts(startEffects), 'ROUND_START')?.deadline;
+  assert.ok(originalDeadline);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+
+  room.handleDisconnect(host.id, roundStart + 1_000);
+  const effects = room.handleMessage(
+    { type: 'REJOIN', roomId: room.roomId, playerToken: host.token },
+    null,
+    roundStart + 5_000,
+  );
+
+  const resumed = firstOfType(broadcasts(effects), 'ROUND_RESUMED');
+  assert.ok(resumed, 'the host should not have to press resume after a refresh');
+  assert.equal(resumed.newDeadline, originalDeadline + 4_000, 'the 4s outage shifts the deadline by exactly 4s');
+  assert.deepEqual(room.getTimer(), { at: originalDeadline + 4_000, kind: 'DEADLINE' });
+});
+
+test('a pause the host chose survives their reconnect', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  startFirstRound(room, 2_000);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+
+  room.handleMessage({ type: 'HOST_PAUSE', hostToken: room.hostToken }, null, roundStart + 1_000);
+  room.handleDisconnect(host.id, roundStart + 2_000);
+  const effects = room.handleMessage(
+    { type: 'REJOIN', roomId: room.roomId, playerToken: host.token },
+    null,
+    roundStart + 3_000,
+  );
+
+  assert.equal(
+    firstOfType(broadcasts(effects), 'ROUND_RESUMED'),
+    undefined,
+    'the host stopped the round deliberately; only they may start it again',
+  );
+  assert.equal(room.getTimer(), null, 'and the clock on their absence is off, because they are back');
+
+  // Every screen was showing a countdown that has just stopped being true, and
+  // no other message would ever correct it.
+  const paused = firstOfType(broadcasts(effects), 'ROUND_PAUSED');
+  assert.ok(paused, 'the outage countdown has to be called off explicitly');
+  assert.equal(paused.hostAway, undefined);
+  assert.equal(paused.hostGraceEndsAt, undefined);
+});
+
+test('the grace period running out resumes a round that can be played without the host', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  const startEffects = startFirstRound(room, 2_000);
+  const originalDeadline = firstOfType(broadcasts(startEffects), 'ROUND_START')?.deadline;
+  assert.ok(originalDeadline);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+
+  room.handleDisconnect(host.id, roundStart + 1_000);
+  const effects = room.tick(roundStart + 1_000 + HOST_GRACE_MS);
+
+  const resumed = firstOfType(broadcasts(effects), 'ROUND_RESUMED');
+  assert.ok(resumed, 'a room of twenty must not be held by one absent phone');
+  assert.equal(resumed.newDeadline, originalDeadline + HOST_GRACE_MS);
+
+  // And it is a real round again, not just an unfrozen screen.
+  const guess = room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, guest.id, resumed.newDeadline - 100);
+  assert.equal(firstOfType(privateMessagesFor(guess, guest.id), 'ANSWER_ACCEPTED')?.place, 1);
+});
+
+test('a hostless game still runs to the end on server timers alone', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  startFirstRound(room, 2_000);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+
+  room.handleDisconnect(host.id, roundStart + 1_000);
+  let clock = roundStart + 1_000 + HOST_GRACE_MS;
+  room.tick(clock);
+
+  // Two songs, and nobody left who can skip or advance either of them.
+  const seen: string[] = [];
+  for (let step = 0; step < 12; step += 1) {
+    const timer = room.getTimer();
+    if (timer === null) break;
+    clock = timer.at;
+    for (const message of broadcasts(room.tick(clock))) seen.push(message.type);
+  }
+
+  assert.ok(seen.includes('GAME_OVER'), `the game must finish unattended; saw ${seen.join(', ')}`);
+  assert.equal(room.getPhase(), 'FINISHED');
+  assert.equal(room.getPlayer(guest.id)?.connected, true);
+});
+
+test('an absent host gets three times as long when only their device has the music', () => {
+  const room = youtubeRoom();
+  const host = joinHost(room, '방장', 1_000);
+  startFirstRound(room, 2_000);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+
+  const effects = room.handleDisconnect(host.id, roundStart + 1_000);
+  assert.equal(
+    firstOfType(broadcasts(effects), 'ROUND_PAUSED')?.hostGraceEndsAt,
+    roundStart + 1_000 + HOST_ABANDON_MS,
+    'ending the game is not reversible, so this wait is the long one',
+  );
+});
+
+test('a YouTube game whose host never returns ends on the scores already earned', () => {
+  const room = youtubeRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  startFirstRound(room, 2_000);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Hype boy' }, guest.id, roundStart + 100);
+  // That answer closed round one. Run into round two, then lose the host.
+  room.tick(roundStart + REVEAL_MS + 100);
+  const secondRound = room.getTimer();
+  assert.ok(secondRound);
+  room.tick(secondRound.at);
+
+  room.handleDisconnect(host.id, secondRound.at + 1_000);
+  const effects = room.tick(secondRound.at + 1_000 + HOST_ABANDON_MS);
+
+  const over = firstOfType(broadcasts(effects), 'GAME_OVER');
+  assert.ok(over, 'a silent YouTube round is not a round anybody can play');
+  assert.equal(room.getPhase(), 'FINISHED');
+  assert.equal(over.finalRanks.find((entry) => entry.playerId === guest.id)?.score, POINTS_PER_WIN);
+  assert.equal(room.getTimer(), null, 'a finished room must leave nothing armed');
+});
+
+test('a snapshot taken during an outage says the host is away and when the wait ends', () => {
+  const room = newRoom();
+  const host = joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  startFirstRound(room, 2_000);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+  room.handleDisconnect(host.id, roundStart + 1_000);
+
+  const effects = room.handleMessage(
+    { type: 'REJOIN', roomId: room.roomId, playerToken: guest.token },
+    null,
+    roundStart + 2_000,
+  );
+  const state = firstOfType(privateMessagesFor(effects, guest.id), 'ROOM_STATE');
+  assert.equal(state?.round?.paused, true);
+  assert.equal(state?.round?.hostAway, true);
+  assert.equal(state?.round?.hostGraceEndsAt, roundStart + 1_000 + HOST_GRACE_MS);
+});
+
+test('a pause the host chose is not reported as an outage', () => {
+  const room = newRoom();
+  joinHost(room, '방장', 1_000);
+  const guest = join(room, '참가자', 1_001);
+  startFirstRound(room, 2_000);
+  const roundStart = 2_000 + COUNTDOWN_MS;
+
+  const paused = firstOfType(
+    broadcasts(room.handleMessage({ type: 'HOST_PAUSE', hostToken: room.hostToken }, null, roundStart + 1_000)),
+    'ROUND_PAUSED',
+  );
+  assert.equal(paused?.hostAway, undefined);
+  assert.equal(paused?.hostGraceEndsAt, undefined);
+  assert.equal(room.getTimer(), null, 'a pause the host chose has no deadline of its own');
+
+  const state = firstOfType(
+    privateMessagesFor(
+      room.handleMessage({ type: 'REJOIN', roomId: room.roomId, playerToken: guest.token }, null, roundStart + 2_000),
+      guest.id,
+    ),
+    'ROOM_STATE',
+  );
+  assert.equal(state?.round?.hostAway, false);
+  assert.equal(state?.round?.hostGraceEndsAt, null);
 });
 
 test('skipping ends the round with no winner', () => {
   const room = newRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
 
   const effects = room.handleMessage(
@@ -658,7 +932,7 @@ test('skipping ends the round with no winner', () => {
 
 test('skip ends a round nobody has answered', () => {
   const room = newRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
 
   const skip = closeRound(room, 2_000 + COUNTDOWN_MS + 200);
@@ -715,7 +989,7 @@ test('skip cannot reveal a text round the third scorer already closed', () => {
 
 test('the game runs every song and then finishes', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
 
   // Round 1 times out.
@@ -743,7 +1017,7 @@ test('the game runs every song and then finishes', () => {
 test('the expanded alias from the catalog is accepted by the server', () => {
   // "피노키오" is not in the source aliases; it comes from title expansion.
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   room.tick(2_000 + COUNTDOWN_MS + ROUND_MS);
   room.tick(2_000 + COUNTDOWN_MS + ROUND_MS + REVEAL_MS);
@@ -812,7 +1086,7 @@ test('each player receives their own rank alongside the shared top five', () => 
 
 test('a disconnect keeps the score and roster slot', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   join(room, '남', 1_001);
   startFirstRound(room, 2_000);
   room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, host.id, 2_000 + COUNTDOWN_MS + 10);
@@ -825,7 +1099,7 @@ test('a disconnect keeps the score and roster slot', () => {
 
 test('rejoining restores a full snapshot including the live deadline', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const roundStart = 2_000 + COUNTDOWN_MS;
   room.handleDisconnect(host.id, roundStart + 100);
@@ -849,7 +1123,7 @@ test('rejoining restores a full snapshot including the live deadline', () => {
 
 test('a rejoin snapshot never contains the answer', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const effects = room.handleMessage(
     { type: 'REJOIN', roomId: room.roomId, playerToken: host.token },
@@ -900,7 +1174,7 @@ test('parseClientMessage accepts well-formed messages', () => {
 
 test('an oversized guess is dropped rather than judged', () => {
   const room = newRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const huge = 'x'.repeat(5_000);
   assert.deepEqual(room.handleMessage({ type: 'SUBMIT_ANSWER', guess: huge }, host.id, 2_000 + COUNTDOWN_MS + 5), []);
@@ -930,7 +1204,7 @@ test('a YouTube round lasts exactly one minute', () => {
   assert.equal(YOUTUBE_CLIP_MS + ANSWER_GRACE_MS, 60_000);
 
   const room = youtubeRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const effects = startFirstRound(room, 2_000);
   const start = firstOfType(broadcasts(effects), 'ROUND_START');
   assert.ok(start);
@@ -939,7 +1213,7 @@ test('a YouTube round lasts exactly one minute', () => {
 
 test('the YouTube id reaches the host and nobody else', () => {
   const room = youtubeRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   const guest = join(room, '참가자', 1_100);
   const effects = startFirstRound(room, 2_000);
 
@@ -965,7 +1239,7 @@ test('the YouTube id reaches the host and nobody else', () => {
 
 test('a host who refreshes mid-round gets the cue back', () => {
   const room = youtubeRoom();
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
 
   const effects = room.handleMessage(
@@ -980,7 +1254,7 @@ test('a host who refreshes mid-round gets the cue back', () => {
 
 test('a player who refreshes mid-round still gets no cue', () => {
   const room = youtubeRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const guest = join(room, '참가자', 1_100);
   startFirstRound(room, 2_000);
 
@@ -1049,7 +1323,7 @@ test('a hundred-song game finishes, and scores exactly one point per answered ro
 
 test('a YouTube round is judged and revealed like any other', () => {
   const room = youtubeRoom();
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const guest = join(room, '참가자', 1_100);
   startFirstRound(room, 2_000);
 
@@ -1068,7 +1342,7 @@ test('a YouTube round is judged and revealed like any other', () => {
 
 test('a proverb round shows the prefix and nothing that answers it', () => {
   const room = textRoom('proverb', PROVERB_BANK);
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const effects = startFirstRound(room, 2_000);
 
   const start = firstOfType(broadcasts(effects), 'ROUND_START');
@@ -1094,7 +1368,7 @@ test('a proverb round shows the prefix and nothing that answers it', () => {
 
 test('an idiom round shows the meaning and nothing that answers it', () => {
   const room = textRoom('idiom', IDIOM_BANK);
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
   const effects = startFirstRound(room, 2_000);
 
   const start = firstOfType(broadcasts(effects), 'ROUND_START');
@@ -1113,7 +1387,7 @@ test('an idiom round shows the meaning and nothing that answers it', () => {
 
 test('a reconnect mid-text-round restores the clue and the clock, not the answer', () => {
   const room = textRoom('proverb', PROVERB_BANK);
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const roundStart = 2_000 + COUNTDOWN_MS;
 
@@ -1213,7 +1487,7 @@ test('an idiom accepts the Hangul and the Hanja, but never its own clue', () => 
 
 test('a text round has no cue, even for the host', () => {
   const room = textRoom('idiom', IDIOM_BANK);
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   const effects = startFirstRound(room, 2_000);
   assert.equal(firstOfType(privateMessagesFor(effects, host.id), 'ROUND_CUE'), undefined);
 
@@ -1227,7 +1501,7 @@ test('a text round has no cue, even for the host', () => {
 
 test('pause, resume and skip work the same in a text round', () => {
   const room = textRoom('proverb', PROVERB_BANK);
-  const host = join(room, '방장', 1_000);
+  const host = joinHost(room, '방장', 1_000);
   startFirstRound(room, 2_000);
   const roundStart = 2_000 + COUNTDOWN_MS;
 
@@ -1438,7 +1712,7 @@ test('every question in a text game is a different one', () => {
   // The shuffle must reorder the bank, never resample it: thirty questions and
   // thirty distinct clues, or somebody gets the same proverb twice.
   const room = textRoom('proverb', PROVERB_BANK);
-  join(room, '방장', 1_000);
+  joinHost(room, '방장', 1_000);
 
   const clues: string[] = [];
   let gameOvers = 0;

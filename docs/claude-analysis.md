@@ -135,6 +135,21 @@ This is the correctness-critical piece of the whole system.
   solve with e.g. host migration/election, which would add real complexity
   for an edge case in a ~20-player casual game.
 
+  > **Superseded in part.** The pause is still right; "no remediation" was
+  > not. A pause with no end is a room locked for good, because `HOST_RESUME`
+  > needs the token that left with the host — and in practice the host is a
+  > phone that dies or refreshes. The implementation puts a clock on the
+  > pause: the host returning inside it resumes automatically, and the clock
+  > running out either resumes without them or, where their device was the
+  > only source of the music, ends the game on the scores already earned. Host
+  > migration is still not in the design, for the reason given above. See
+  > `docs/realtime-protocol.md` §3 "An absent host".
+  >
+  > The same paragraph's premise — that the disconnecting player *is* the
+  > host — did not hold either: host was assigned by join order rather than by
+  > the token, so an invited player arriving first became the host. It is the
+  > token now, on `JOIN_ROOM` and `REJOIN`.
+
 ## 6. Fairness limitation (read before treating "first correct" as exact)
 
 "First correct answer" as measured by server receipt time is biased by each

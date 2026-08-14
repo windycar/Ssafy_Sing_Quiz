@@ -83,6 +83,14 @@ export interface RoundView {
   deadline: number;
   paused: boolean;
   pausedAt: number | null;
+  /**
+   * True while the pause is the host's connection dropping rather than the host
+   * choosing to stop. The two need different words on screen: one is a break,
+   * the other is an outage the server is timing.
+   */
+  hostAway: boolean;
+  /** When the server stops waiting for the host, or null when it is not. */
+  hostGraceEndsAt: number | null;
   /** The host plays this one in the room; nobody else plays anything. */
   livePlayback: boolean;
   /**
@@ -208,6 +216,8 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
               deadline: message.round.deadline,
               paused: message.round.paused,
               pausedAt: message.round.pausedAt,
+              hostAway: message.round.hostAway,
+              hostGraceEndsAt: message.round.hostGraceEndsAt,
               livePlayback: message.round.livePlayback,
               // A host reconnecting mid-round gets its ROUND_CUE right after
               // this snapshot; a player never gets one.
@@ -276,6 +286,8 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
           deadline: message.deadline,
           paused: false,
           pausedAt: null,
+          hostAway: false,
+          hostGraceEndsAt: null,
           livePlayback: message.livePlayback,
           // ROUND_CUE arrives separately, and only for the host.
           cue: null,
@@ -302,7 +314,16 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
       return {
         ...state,
         clockOffsetMs: sampleClock(state, message.pausedAt, receivedAt),
-        round: state.round === null ? null : { ...state.round, paused: true, pausedAt: message.pausedAt },
+        round:
+          state.round === null
+            ? null
+            : {
+                ...state.round,
+                paused: true,
+                pausedAt: message.pausedAt,
+                hostAway: message.hostAway ?? false,
+                hostGraceEndsAt: message.hostGraceEndsAt ?? null,
+              },
       };
 
     case 'ROUND_RESUMED':
@@ -310,7 +331,17 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         ...state,
         // The server extended the deadline by the paused duration. The client
         // adopts the new value; it never computes one.
-        round: state.round === null ? null : { ...state.round, paused: false, pausedAt: null, deadline: message.newDeadline },
+        round:
+          state.round === null
+            ? null
+            : {
+                ...state.round,
+                paused: false,
+                pausedAt: null,
+                hostAway: false,
+                hostGraceEndsAt: null,
+                deadline: message.newDeadline,
+              },
       };
 
     case 'ANSWER_ACCEPTED':
@@ -340,7 +371,7 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
         // Keep the roster's scores in step with the leaderboard so a caller can
         // render either one without them disagreeing.
         players: state.players.map((player) => ({ ...player, score: scores.get(player.id) ?? player.score })),
-        round: state.round === null ? null : { ...state.round, paused: false },
+        round: state.round === null ? null : { ...state.round, paused: false, hostAway: false, hostGraceEndsAt: null },
       };
     }
 
@@ -507,11 +538,17 @@ export class ProtocolClient {
       // A stored token identifies the player; a nickname only creates one. The
       // token path must win, or a refresh would produce a duplicate roster slot
       // and reset the score (analysis §5).
+      //
+      // The host token rides along on both. The server seats the host from it
+      // rather than from join order, so a client that held it back would leave
+      // the room hostless — and in a YouTube game that means no `ROUND_CUE` and
+      // therefore no music.
+      const claim = this.hostClaim();
       if (this.playerToken !== null) {
-        this.send({ type: 'REJOIN', roomId: this.options.roomId, playerToken: this.playerToken }, socket);
+        this.send({ type: 'REJOIN', roomId: this.options.roomId, playerToken: this.playerToken, ...claim }, socket);
       } else {
         this.send(
-          { type: 'JOIN_ROOM', roomId: this.options.roomId, nickname: this.options.nickname ?? '' },
+          { type: 'JOIN_ROOM', roomId: this.options.roomId, nickname: this.options.nickname ?? '', ...claim },
           socket,
         );
       }
@@ -589,6 +626,19 @@ export class ProtocolClient {
     const hostToken = this.options.hostToken;
     if (typeof hostToken !== 'string' || hostToken.length === 0) return false;
     return this.send({ type, hostToken });
+  }
+
+  /**
+   * The `hostToken` field for a join, or nothing at all when there is no token.
+   *
+   * Spread into the message rather than assigned, so a client without one sends
+   * a frame with no `hostToken` key — the same frame it sent before this field
+   * existed, rather than one carrying an explicit empty claim.
+   */
+  private hostClaim(): { hostToken?: string } {
+    const hostToken = this.options.hostToken;
+    if (typeof hostToken !== 'string' || hostToken.length === 0) return {};
+    return { hostToken };
   }
 
   /**

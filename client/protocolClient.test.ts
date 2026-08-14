@@ -112,6 +112,25 @@ test('the clock offset keeps the fastest sample rather than the latest', () => {
   assert.equal(state.clockOffsetMs, 900);
 });
 
+test('a pause says whether it is the host taking a break or the host dropping out', () => {
+  const chosen = reduce([roundStart, { type: 'ROUND_PAUSED', pausedAt: 5_000 }]);
+  assert.equal(chosen.round?.paused, true);
+  assert.equal(chosen.round?.hostAway, false, 'an older server sends neither field; that is a plain pause');
+  assert.equal(chosen.round?.hostGraceEndsAt, null);
+
+  const outage = reduce([
+    roundStart,
+    { type: 'ROUND_PAUSED', pausedAt: 5_000, hostAway: true, hostGraceEndsAt: 65_000 },
+  ]);
+  assert.equal(outage.round?.hostAway, true);
+  assert.equal(outage.round?.hostGraceEndsAt, 65_000, 'so a screen can count the wait down instead of just freezing');
+
+  // Whatever stopped the round, resuming clears the outage with it.
+  const resumed = applyServerMessage(outage, { type: 'ROUND_RESUMED', newDeadline: 90_000 }, 65_000);
+  assert.equal(resumed.round?.hostAway, false);
+  assert.equal(resumed.round?.hostGraceEndsAt, null);
+});
+
 test('answer feedback is private and a late guess carries no verdict', () => {
   assert.deepEqual(reduce([roundStart, { type: 'ANSWER_REJECTED', guess: '틀린답' }]).answerFeedback, {
     kind: 'rejected',
@@ -313,6 +332,8 @@ test('a ROOM_STATE snapshot restores a round already in progress', () => {
         deadline: 21_000,
         paused: false,
         pausedAt: null,
+        hostAway: false,
+        hostGraceEndsAt: null,
         livePlayback: false,
       },
     },
@@ -426,7 +447,7 @@ test('a pause freezes the answer window and a resume adopts the server deadline'
   assert.equal(client.remainingMs(), 15_000);
 });
 
-function harness(options: { playerToken?: string | null } = {}): {
+function harness(options: { playerToken?: string | null; hostToken?: string | null } = {}): {
   client: ProtocolClient;
   sockets: FakeSocket[];
   pending: { run(): void; delays: number[] };
@@ -442,7 +463,7 @@ function harness(options: { playerToken?: string | null } = {}): {
     roomId: 'ROOM',
     nickname: '테스터',
     playerToken: options.playerToken ?? null,
-    hostToken: 'HOSTSECRET',
+    hostToken: options.hostToken === undefined ? 'HOSTSECRET' : options.hostToken,
     socketFactory: () => {
       const socket = new FakeSocket();
       sockets.push(socket);
@@ -486,7 +507,14 @@ test('a first connection joins by nickname and a reconnection rejoins by token',
 
   client.connect();
   sockets[0]?.open();
-  assert.deepEqual(sockets[0]?.sent[0], { type: 'JOIN_ROOM', roomId: 'ROOM', nickname: '테스터' });
+  // The host token rides along: the server seats the host from it rather than
+  // from join order, so holding it back would leave the room hostless.
+  assert.deepEqual(sockets[0]?.sent[0], {
+    type: 'JOIN_ROOM',
+    roomId: 'ROOM',
+    nickname: '테스터',
+    hostToken: 'HOSTSECRET',
+  });
 
   sockets[0]?.deliver(snapshot('session-token'));
   assert.deepEqual(tokens, ['session-token'], 'the caller is handed the token to persist');
@@ -498,7 +526,23 @@ test('a first connection joins by nickname and a reconnection rejoins by token',
   sockets[1]?.open();
   // Rejoining by token is what preserves the score and the roster slot; a
   // second JOIN_ROOM would create a duplicate player (analysis §5).
-  assert.deepEqual(sockets[1]?.sent[0], { type: 'REJOIN', roomId: 'ROOM', playerToken: 'session-token' });
+  assert.deepEqual(sockets[1]?.sent[0], {
+    type: 'REJOIN',
+    roomId: 'ROOM',
+    playerToken: 'session-token',
+    hostToken: 'HOSTSECRET',
+  });
+});
+
+test('a client with no host token sends a join with no host claim at all', () => {
+  const { client, sockets } = harness({ hostToken: null });
+
+  client.connect();
+  sockets[0]?.open();
+  // Not `hostToken: ''` or `hostToken: null`: a player's frame is the same
+  // frame it was before the field existed.
+  assert.deepEqual(sockets[0]?.sent[0], { type: 'JOIN_ROOM', roomId: 'ROOM', nickname: '테스터' });
+  assert.equal(Object.hasOwn(sockets[0]?.sent[0] ?? {}, 'hostToken'), false);
 });
 
 test('reconnect delays back off and then give up', () => {

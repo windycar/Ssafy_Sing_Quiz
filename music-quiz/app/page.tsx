@@ -95,6 +95,8 @@ export default function Home() {
   const [answer, setAnswer] = useState("");
   const [remaining, setRemaining] = useState(0);
   const [countdown, setCountdown] = useState(0);
+  /** Seconds left before the server stops waiting for an absent host. */
+  const [hostWait, setHostWait] = useState(0);
 
   // Host setup
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -279,6 +281,12 @@ export default function Home() {
 
       const startsAt = client.getState().countdownStartsAt;
       setCountdown(startsAt === null ? 0 : Math.max(0, Math.ceil((startsAt - client.serverNow()) / 1000)));
+
+      // How long the server will keep waiting for a host who dropped out. Read
+      // on the same clock as everything else, so a frozen round shows a number
+      // going down rather than a screen that looks broken.
+      const endsAt = client.getState().round?.hostGraceEndsAt ?? null;
+      setHostWait(endsAt === null ? 0 : Math.max(0, Math.ceil((endsAt - client.serverNow()) / 1000)));
     }, 100);
     return () => window.clearInterval(timer);
   }, []);
@@ -423,6 +431,23 @@ export default function Home() {
 
   // In a live room the mode is whatever the server said; on the setup screen it
   // is the mode the server recorded when the room was created. Never a guess.
+  /**
+   * What to say about a stopped round, or null when it is running.
+   *
+   * A frozen screen with no explanation reads as a broken game. There are two
+   * pauses and they mean different things to a player: one is the host taking a
+   * break, the other is the host's connection dropping — and only the second
+   * one has the server counting down to a decision.
+   */
+  const pauseNotice: string | null =
+    round === null || !round.paused
+      ? null
+      : !round.hostAway
+        ? "방장이 라운드를 잠시 멈췄습니다."
+        : round.livePlayback
+          ? `방장 연결이 끊겼습니다. ${hostWait}초 안에 돌아오지 않으면 게임이 여기서 종료됩니다.`
+          : `방장 연결이 끊겼습니다. ${hostWait}초 뒤 자동으로 이어집니다.`;
+
   const mode: GameMode = round?.question.mode ?? state?.mode ?? roomMode;
   const textMode = isTextMode(mode);
   const totalQuestions = round?.question.totalQuestions ?? state?.totalQuestions ?? 0;
@@ -870,6 +895,8 @@ export default function Home() {
                 </div>
               </div>
             )}
+
+            {pauseNotice !== null && <p className="pause-notice">{pauseNotice}</p>}
 
             {state?.phase === "REVEAL" && reveal !== null ? (
               <div className="answer-reveal">

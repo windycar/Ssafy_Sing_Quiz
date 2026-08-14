@@ -885,13 +885,32 @@ function tick(): void {
   // The record stops spinning while the round is paused, which is the clearest
   // signal from the back of a room that nothing is running.
   const stage = document.querySelector('#screen-round .stage');
+  const notice = el('round-notice');
 
   if (round === null || state.phase !== 'IN_ROUND') {
     fill.style.width = '0%';
     text.textContent = '';
+    notice.textContent = '';
     timer.classList.remove('paused', 'urgent');
     stage?.classList.remove('paused');
     return;
+  }
+
+  // A frozen screen with no explanation reads as a broken game. Say which of
+  // the two pauses this is, and — for the one the server is timing — how much
+  // of the wait is left. It is drawn here rather than in `render` so the number
+  // counts down instead of sitting at whatever it was when the pause landed.
+  if (!round.paused) {
+    notice.textContent = '';
+  } else if (!round.hostAway) {
+    notice.textContent = '방장이 라운드를 잠시 멈췄습니다.';
+  } else {
+    const waitMs = round.hostGraceEndsAt === null ? 0 : round.hostGraceEndsAt - client.serverNow();
+    const seconds = Math.max(0, Math.ceil(waitMs / 1000));
+    notice.textContent =
+      round.livePlayback
+        ? `방장 연결이 끊겼습니다. ${seconds}초 안에 돌아오지 않으면 게임이 여기서 종료됩니다.`
+        : `방장 연결이 끊겼습니다. ${seconds}초 뒤 자동으로 이어집니다.`;
   }
 
   const remaining = client.remainingMs() ?? 0;

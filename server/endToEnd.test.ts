@@ -153,7 +153,7 @@ test('two clients play a full round over real sockets', async () => {
     const { room } = game.createRoom();
 
     const host = await TestClient.connect(port);
-    host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장' });
+    host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장', hostToken: room.hostToken });
     const hostState = await host.waitFor('ROOM_STATE');
     assert.equal(hostState.isHost, true);
 
@@ -216,7 +216,7 @@ test('a proverb room plays over real sockets without the answer ever crossing th
     assert.equal(questionCount, QUESTIONS_PER_TEXT_GAME);
 
     const host = await TestClient.connect(port);
-    host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장' });
+    host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장', hostToken: room.hostToken });
     const hostState = await host.waitFor('ROOM_STATE');
     assert.equal(hostState.mode, 'proverb');
     assert.equal(hostState.totalQuestions, QUESTIONS_PER_TEXT_GAME);
@@ -288,7 +288,7 @@ test('a reconnecting client keeps its score and gets a fresh snapshot', async ()
     const { room } = game.createRoom();
 
     const host = await TestClient.connect(port);
-    host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장' });
+    host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장', hostToken: room.hostToken });
     const first = await host.waitFor('ROOM_STATE');
     const token = first.playerToken;
 

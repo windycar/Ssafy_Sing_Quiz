@@ -21,6 +21,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './index.ts';
+import { PLAYLIST_FILE, PROJECT_ROOT, resolveLocalFile } from './localFiles.ts';
+import { BANK_PROBLEMS } from './questionBanks.ts';
 import { resolvePlaylist } from './playlistLoader.ts';
 import { parsePlaylist } from '../shared/playlist.ts';
 import type { RawSongRecord } from '../shared/songCatalog.ts';
@@ -148,13 +150,16 @@ async function loadPlaylist(path: string, catalog: readonly RawSongRecord[]): Pr
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+
+  // No flags means "just start it", which is how the launcher runs. Fall back
+  // to the host's own 곡목록.txt in the project root, or to the bundled list
+  // when they have not written one. Naming a file explicitly still wins — the
+  // flags are what a developer testing one playlist uses.
   if (options.songsPath === null && options.playlistPath === null) {
-    console.error(
-      '사용법: node main.ts --playlist <링크 목록 txt>\n' +
-        '        node main.ts --songs <곡 JSON 경로> [--port 8787] [--demo-clips] [--origin <주소>] [--headless]',
-    );
-    process.exitCode = 1;
-    return;
+    const playlist = resolveLocalFile(PLAYLIST_FILE);
+    options.playlistPath = playlist.path;
+    options.songsPath = resolve(PROJECT_ROOT, 'data/songs.recovered.json');
+    console.log(`곡 목록: ${playlist.path}${playlist.fromRoot ? '' : '  (기본 목록)'}`);
   }
 
   // With both flags, the JSON is the catalog a link-only playlist line is
@@ -193,6 +198,16 @@ async function main(): Promise<void> {
   const byCode = new Map<string, number>();
   for (const issue of issues) byCode.set(issue.code, (byCode.get(issue.code) ?? 0) + 1);
   for (const [code, count] of byCode) console.log(`  제외 ${count}곡: ${code}`);
+
+  // A bank the host wrote themselves that would not load. The server is up and
+  // the song game works, so this is a warning rather than a failure — but it is
+  // printed before the address, because the mode is simply gone until it is
+  // fixed and nobody should find that out mid-event.
+  if (BANK_PROBLEMS.length > 0) {
+    console.log('\n다음 문제 파일을 읽지 못해 해당 모드를 쓸 수 없습니다:');
+    for (const problem of BANK_PROBLEMS) console.log(`  ${problem}`);
+    console.log('  파일을 고치고 이 창을 닫았다 다시 실행하세요. 노래 모드는 그대로 됩니다.');
+  }
 
   const base = `http://localhost:${options.port}`;
   console.log(`\n서버: ${base}  (상태 확인: ${base}/health)`);

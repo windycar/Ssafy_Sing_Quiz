@@ -20,6 +20,26 @@ import type { ServerMessage } from './protocol.ts';
 import { QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
 import type { RawSongRecord } from '../shared/songCatalog.ts';
 
+/**
+ * How many questions a proverb room actually draws on this machine.
+ *
+ * `QUESTIONS_PER_TEXT_GAME` on a clean checkout. Read from the live bank
+ * because a host running the suite may have a shorter `속담.json` of their own
+ * in the project root, and the server playing all of it is correct.
+ */
+const TEXT_GAME_SIZE = Math.min(PROVERB_BANK.length, QUESTIONS_PER_TEXT_GAME);
+
+/**
+ * Set when the machine cannot play proverbs at all, which happens only when
+ * someone's own `속담.json` in the project root will not load.
+ *
+ * The proverb test below is about sockets and timers, not about the bank, so
+ * it is skipped with a reason rather than left to fail six seconds later
+ * waiting for a round that was never going to start. The server says the same
+ * thing far more loudly at startup.
+ */
+const NO_PROVERBS = PROVERB_BANK.length === 0 ? '프로젝트 폴더의 속담.json 을 읽지 못했습니다' : false;
+
 const SONGS: RawSongRecord[] = [
   {
     id: 's1',
@@ -209,17 +229,17 @@ test('two clients play a full round over real sockets', async () => {
   });
 });
 
-test('a proverb room plays over real sockets without the answer ever crossing the wire', async () => {
+test('a proverb room plays over real sockets without the answer ever crossing the wire', { skip: NO_PROVERBS }, async () => {
   await withServer(async ({ port, game }) => {
     const { room, mode, questionCount } = game.createRoom({ mode: 'proverb' });
     assert.equal(mode, 'proverb');
-    assert.equal(questionCount, QUESTIONS_PER_TEXT_GAME);
+    assert.equal(questionCount, TEXT_GAME_SIZE);
 
     const host = await TestClient.connect(port);
     host.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '방장', hostToken: room.hostToken });
     const hostState = await host.waitFor('ROOM_STATE');
     assert.equal(hostState.mode, 'proverb');
-    assert.equal(hostState.totalQuestions, QUESTIONS_PER_TEXT_GAME);
+    assert.equal(hostState.totalQuestions, TEXT_GAME_SIZE);
 
     const guest = await TestClient.connect(port);
     guest.send({ type: 'JOIN_ROOM', roomId: room.roomId, nickname: '참가자' });
@@ -231,7 +251,7 @@ test('a proverb room plays over real sockets without the answer ever crossing th
 
     assert.equal(start.question.mode, 'proverb');
     assert.equal(start.question.index, 0);
-    assert.equal(start.question.totalQuestions, QUESTIONS_PER_TEXT_GAME);
+    assert.equal(start.question.totalQuestions, TEXT_GAME_SIZE);
     assert.ok((start.question.clue ?? '').length > 0, 'the prefix has to be on screen');
     assert.equal(start.mediaUrl, '', 'a text round needs no media URL');
     assert.equal(start.livePlayback, false);

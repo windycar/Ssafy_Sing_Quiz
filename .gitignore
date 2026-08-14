@@ -22,6 +22,17 @@ coverage/
 Thumbs.db
 *.log
 
+# The three files a host edits in the project root. The launcher creates them
+# from the copies under data/ on first run. They are one host's setlist for one
+# event, not a change to the project — so they are ignored, and the versioned
+# originals in data/ stay the thing a fresh clone gets.
+/곡목록.txt
+/playlist.txt
+/속담.json
+/proverbs.json
+/사자성어.json
+/idioms.json
+
 # Local multi-agent worktrees
 .worktrees/
 .scxenv/

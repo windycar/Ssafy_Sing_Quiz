@@ -1,0 +1,91 @@
+/**
+ * Where the three files a host actually edits live.
+ *
+ * The song list, the proverbs, and the idioms are content, not code. Asking
+ * someone to find them under `data/` — next to a recovered song catalog, two
+ * `.50.json` archives and a handoff note — is asking them to edit the wrong
+ * file at some point. So each one has a plain Korean name sitting in the
+ * project root, beside the launcher, and that copy wins whenever it exists.
+ *
+ * Nothing here is required: with no root file the server falls back to what the
+ * repository ships, which is what a fresh clone and every test does. That is
+ * also why the root copies are gitignored — they are one host's setlist for one
+ * event, not a change to the project.
+ *
+ * `resolveLocalFiles` takes the root directory rather than reading it from
+ * `import.meta.url`, so a test can point it at a temporary folder.
+ */
+
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** The project root: the folder holding `server/`, `data/` and the launcher. */
+export const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+export interface ResolvedFile {
+  /** Absolute path to the file the server should read. */
+  path: string;
+  /**
+   * True when this is the host's own copy from the project root.
+   *
+   * Callers treat the two differently on failure. A bundled file that will not
+   * parse is a mistake in this repository and should stop the server; a root
+   * file that will not parse is a typo in something somebody edited half an
+   * hour ago, and taking the whole server down over it — including the modes
+   * that file has nothing to do with — is the wrong trade.
+   */
+  fromRoot: boolean;
+}
+
+/**
+ * One editable file: what it may be called in the root, and what ships with the
+ * repository when it is not there.
+ */
+export interface LocalFileSpec {
+  /** For messages. e.g. `곡 목록`. */
+  label: string;
+  /**
+   * Accepted names in the project root, most preferred first. The Korean name
+   * is what the documentation and the launcher tell people to use; the ASCII
+   * one is there because a file copied off an older setup will have it.
+   */
+  rootNames: readonly string[];
+  /** Path relative to the project root, used when no root file exists. */
+  bundled: string;
+}
+
+export const PLAYLIST_FILE: LocalFileSpec = {
+  label: '곡 목록',
+  rootNames: ['곡목록.txt', 'playlist.txt'],
+  bundled: 'data/playlist.top100.txt',
+};
+
+export const PROVERB_FILE: LocalFileSpec = {
+  label: '속담 문제',
+  rootNames: ['속담.json', 'proverbs.json'],
+  bundled: 'data/proverbs.json',
+};
+
+export const IDIOM_FILE: LocalFileSpec = {
+  label: '사자성어 문제',
+  rootNames: ['사자성어.json', 'idioms.json'],
+  bundled: 'data/idioms.json',
+};
+
+/** Every file a host is expected to edit, in the order the launcher lists them. */
+export const EDITABLE_FILES: readonly LocalFileSpec[] = [PLAYLIST_FILE, PROVERB_FILE, IDIOM_FILE];
+
+/**
+ * The host's copy if there is one, otherwise the bundled file.
+ *
+ * Existence is checked at call time rather than cached, because the launcher
+ * creates the root copies immediately before starting the server.
+ */
+export function resolveLocalFile(spec: LocalFileSpec, root: string = PROJECT_ROOT): ResolvedFile {
+  for (const name of spec.rootNames) {
+    const candidate = resolve(root, name);
+    if (existsSync(candidate)) return { path: candidate, fromRoot: true };
+  }
+  return { path: resolve(root, spec.bundled), fromRoot: false };
+}

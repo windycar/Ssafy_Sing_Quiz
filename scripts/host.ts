@@ -120,15 +120,8 @@ async function main(): Promise<void> {
   const passthrough = process.argv.slice(2);
   const port = parsePort(passthrough);
 
-  if (!passthrough.includes('--playlist') && !passthrough.includes('--songs')) {
-    console.error(
-      '사용법: node scripts/host.ts --playlist <링크 목록 txt> [--songs <곡 JSON>] [--port 8787]\n' +
-        '옵션은 server/main.ts 와 같습니다.',
-    );
-    process.exitCode = 1;
-    return;
-  }
-
+  // 곡 목록을 지정하지 않으면 server/main.ts 가 프로젝트 루트의 곡목록.txt 를
+  // 찾아 씁니다. 어느 파일을 쓸지 정하는 규칙은 그 파일 한 곳에만 둡니다.
   console.log('공개 주소를 만드는 중…');
   const tunnel = startTunnel(port);
 

@@ -21,8 +21,13 @@ import { buildSongCatalog, YOUTUBE_CLIP_MS } from '../shared/songCatalog.ts';
 import type { RawSongRecord, SongConfig } from '../shared/songCatalog.ts';
 import { songQuestions, QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
 import type { GameMode, Question } from '../shared/questions.ts';
-import { IDIOM_BANK, PROVERB_BANK } from './questionBanks.ts';
+import { bundledBank } from './questionBanks.ts';
 import { selectQuestions } from './index.ts';
+
+// The banks this repository ships, not whatever the machine running the tests
+// happens to have in its project root. See questionBanks.test.ts.
+const PROVERB_BANK = bundledBank('proverb');
+const IDIOM_BANK = bundledBank('idiom');
 
 // --- Test helpers -----------------------------------------------------------
 

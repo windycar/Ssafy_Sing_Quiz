@@ -6,27 +6,32 @@
  * is played from — a curation mistake there is a broken question in front of a
  * room, and the rules being correct does not help if the data breaks them.
  *
- * Importing this module is itself part of the test: the banks are built at
- * module load, so a data file that violates any rule fails before the first
- * assertion runs.
+ * Read through `bundledBank`, not through `PROVERB_BANK`/`IDIOM_BANK`. Those
+ * two are whatever the machine will actually play, which on a host's own laptop
+ * is their `속담.json` from the project root — and if that decided whether this
+ * suite passes, a bad *shipped* bank would go unnoticed on exactly the machines
+ * that edit these files most.
  */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { IDIOM_BANK, PROVERB_BANK, textBankFor } from './questionBanks.ts';
+import { bundledBank, IDIOM_BANK, PROVERB_BANK, textBankFor } from './questionBanks.ts';
 import { selectQuestions } from './index.ts';
 import { normalizeAnswer } from '../shared/answerMatching.ts';
 import { QUESTIONS_PER_TEXT_GAME, TEXT_BANK_SIZE } from '../shared/questions.ts';
 import type { Question } from '../shared/questions.ts';
 
+const SHIPPED_PROVERBS = bundledBank('proverb');
+const SHIPPED_IDIOMS = bundledBank('idiom');
+
 const BANKS: [string, readonly Question[]][] = [
-  ['속담', PROVERB_BANK],
-  ['사자성어', IDIOM_BANK],
+  ['속담', SHIPPED_PROVERBS],
+  ['사자성어', SHIPPED_IDIOMS],
 ];
 
 test('both shipped banks hold exactly the bank size', () => {
-  assert.equal(PROVERB_BANK.length, TEXT_BANK_SIZE);
-  assert.equal(IDIOM_BANK.length, TEXT_BANK_SIZE);
+  assert.equal(SHIPPED_PROVERBS.length, TEXT_BANK_SIZE);
+  assert.equal(SHIPPED_IDIOMS.length, TEXT_BANK_SIZE);
 });
 
 for (const [name, bank] of BANKS) {
@@ -65,7 +70,7 @@ for (const [name, bank] of BANKS) {
 }
 
 test('every proverb splits cleanly into the prefix shown and the suffix asked for', () => {
-  for (const question of PROVERB_BANK) {
+  for (const question of SHIPPED_PROVERBS) {
     assert.equal(question.mode, 'proverb');
     if (question.mode !== 'proverb') continue;
 
@@ -85,7 +90,7 @@ test('every proverb splits cleanly into the prefix shown and the suffix asked fo
 });
 
 test('every idiom is four characters in Hangul and in Hanja', () => {
-  for (const question of IDIOM_BANK) {
+  for (const question of SHIPPED_IDIOMS) {
     assert.equal(question.mode, 'idiom');
     if (question.mode !== 'idiom') continue;
 
@@ -123,16 +128,16 @@ test('two rooms drawing the same mode get different questions', () => {
   // principle — two draws could coincide — but choosing 30 of 50 twice makes an
   // identical set about 1 in 10^13, so a failure here means the shuffle is gone
   // rather than that the test was unlucky.
-  const a = selectQuestions(PROVERB_BANK).map((question) => question.id);
-  const b = selectQuestions(PROVERB_BANK).map((question) => question.id);
+  const a = selectQuestions(SHIPPED_PROVERBS).map((question) => question.id);
+  const b = selectQuestions(SHIPPED_PROVERBS).map((question) => question.id);
   assert.notDeepEqual(a, b, 'the order must differ between rooms');
   assert.notDeepEqual(new Set(a), new Set(b), 'the selected set must differ between rooms');
 });
 
 test('a draw can be made deterministic for a test that needs it', () => {
-  const drawn = selectQuestions(PROVERB_BANK, QUESTIONS_PER_TEXT_GAME, false);
+  const drawn = selectQuestions(SHIPPED_PROVERBS, QUESTIONS_PER_TEXT_GAME, false);
   assert.deepEqual(
     drawn.map((question) => question.id),
-    PROVERB_BANK.slice(0, QUESTIONS_PER_TEXT_GAME).map((question) => question.id),
+    SHIPPED_PROVERBS.slice(0, QUESTIONS_PER_TEXT_GAME).map((question) => question.id),
   );
 });

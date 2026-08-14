@@ -227,18 +227,44 @@ export class QuestionBankError extends Error {
 }
 
 /**
+ * How many questions a bank must hold.
+ *
+ * `TEXT_BANK_SIZE` for the banks this repository ships: they are fixed,
+ * version-controlled content, so 49 questions is a mistake somebody has to fix
+ * rather than a bank that is merely one short.
+ *
+ * `null` for a bank somebody wrote themselves at the project root. Their file
+ * is theirs, and a host who wants a twelve-question round of proverbs is not
+ * making a mistake — a game just plays whatever is there, up to
+ * `QUESTIONS_PER_TEXT_GAME`. Everything else on the checklist below still
+ * applies: those rules are about questions being *playable*, not about how many
+ * of them there are.
+ */
+export interface BankOptions {
+  expectedSize?: number | null;
+}
+
+/**
  * Checks the things that make a text question unplayable rather than merely
  * imperfect, and throws instead of dropping the record.
  *
  * Dropping is right for a song catalog, where one missing media URL should not
- * cost the host the other hundred and seventy. It is wrong here: these banks
- * are fixed, version-controlled content, so a bad record is a mistake in the
- * repository that someone must fix, and quietly playing 29 questions would
- * hide it.
+ * cost the host the other hundred and seventy. It is wrong here: a bad record
+ * is something someone must fix, and quietly playing 29 questions would hide
+ * it.
  */
-function assertBank(kind: string, ids: readonly string[], answers: readonly string[][], clues: readonly string[]): void {
-  if (ids.length !== TEXT_BANK_SIZE) {
-    throw new QuestionBankError(`${kind} 문제 은행은 정확히 ${TEXT_BANK_SIZE}문항이어야 합니다 (현재 ${ids.length}).`);
+function assertBank(
+  kind: string,
+  ids: readonly string[],
+  answers: readonly string[][],
+  clues: readonly string[],
+  expectedSize: number | null,
+): void {
+  if (expectedSize !== null && ids.length !== expectedSize) {
+    throw new QuestionBankError(`${kind} 문제 은행은 정확히 ${expectedSize}문항이어야 합니다 (현재 ${ids.length}).`);
+  }
+  if (ids.length === 0) {
+    throw new QuestionBankError(`${kind} 문제가 하나도 없습니다.`);
   }
 
   const seenIds = new Set<string>();
@@ -277,7 +303,7 @@ function assertBank(kind: string, ids: readonly string[], answers: readonly stri
  * Both the whole proverb and the missing half are accepted, because a player
  * reading "가는 말이 고와야" may reasonably type either the rest or the lot.
  */
-export function buildProverbBank(records: readonly RawProverb[]): Question[] {
+export function buildProverbBank(records: readonly RawProverb[], options: BankOptions = {}): Question[] {
   const questions: Question[] = [];
   for (const record of records) {
     const prefix = record.prefix.trim();
@@ -321,12 +347,13 @@ export function buildProverbBank(records: readonly RawProverb[]): Question[] {
     questions.map((q) => q.id),
     questions.map((q) => q.aliases),
     questions.map((q) => (q.mode === 'proverb' ? q.prefix : '')),
+    options.expectedSize === undefined ? TEXT_BANK_SIZE : options.expectedSize,
   );
   return questions;
 }
 
 /** Builds the idiom bank. Both the Hangul reading and the Hanja are accepted. */
-export function buildIdiomBank(records: readonly RawIdiom[]): Question[] {
+export function buildIdiomBank(records: readonly RawIdiom[], options: BankOptions = {}): Question[] {
   const questions: Question[] = [];
   for (const record of records) {
     const answer = record.answer.trim();
@@ -367,6 +394,7 @@ export function buildIdiomBank(records: readonly RawIdiom[]): Question[] {
     questions.map((q) => q.id),
     questions.map((q) => q.aliases),
     questions.map((q) => (q.mode === 'idiom' ? q.meaning : '')),
+    options.expectedSize === undefined ? TEXT_BANK_SIZE : options.expectedSize,
   );
   return questions;
 }

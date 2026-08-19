@@ -329,7 +329,19 @@
             <span>띄어쓰기·대소문자·특수문자는 자동으로 무시됩니다.</span>
           </div>
           <div class="chat-log">
+            <!-- 내 답에 대한 판정. 나에게만 옵니다. -->
             <p id="answer-feedback" class="feedback"></p>
+            <!--
+              방 전체가 함께 보는 칸입니다. 속담·사자성어 라운드에서 서버가
+              보내 주는 것만 그립니다.
+
+                · 남은 시간 30초에 도착하는 힌트 한 줄 (ROUND_HINT)
+                · 정답자가 나올 때마다 "1등 - 닉네임" (ROUND_SCORER)
+
+              오답이나 남이 적은 답은 절대 여기 오지 않습니다. 서버가 보내지
+              않기 때문입니다.
+            -->
+            <ul id="round-feed" class="round-feed" aria-live="polite" aria-label="라운드 알림"></ul>
           </div>
           <form id="answer-form" class="answer-form">
             <label for="answer-input">정답</label>

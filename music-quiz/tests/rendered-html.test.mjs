@@ -126,3 +126,29 @@ test("ships SSAFY DAY metadata, event artwork, social card, and no starter previ
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
 
+
+test("the answer panel shows the server's hint and the places as they are taken", async () => {
+  // Client-rendered, so the assertion is on the source: every entry has to come
+  // out of a protocol message rather than out of anything this file worked out.
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(page, /function RoundFeed/, "no public feed component");
+  assert.match(page, /<RoundFeed state=\{state\} \/>/, "the feed is not mounted in the answer panel");
+  assert.match(page, /round\.hint/, "the hint must come from ROUND_HINT");
+  assert.match(page, /round\.scorers\.map/, "the places must come from ROUND_SCORER");
+
+  // The exact line the room reads, as one expression so server rendering keeps
+  // it as a single text node.
+  assert.match(page, /\$\{scorer\.place\}등 - \$\{scorer\.nickname\}/, 'the line must read "N등 - 닉네임"');
+
+  // Nothing is derived locally: no initials, no place numbering, no reordering.
+  assert.doesNotMatch(page, /hangulInitials|toQuestionHint/, "the client must not build a hint of its own");
+  assert.doesNotMatch(page, /scorers\.(sort|slice|filter)\(/, "the client must not reorder the scorers");
+
+  // And it is announced, and visually distinct from the private verdict.
+  assert.match(page, /className="round-feed"[\s\S]{0,120}aria-live/);
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.round-feed/);
+  assert.match(css, /\.feed-hint/);
+  assert.match(css, /\.feed-scorer/);
+});

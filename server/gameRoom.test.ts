@@ -7,6 +7,7 @@ import {
   COUNTDOWN_MS,
   REVEAL_MS,
   TEXT_ROUND_MS,
+  TEXT_HINT_REMAINING_MS,
   HOST_GRACE_MS,
   HOST_ABANDON_MS,
   POINTS_PER_WIN,
@@ -19,7 +20,7 @@ import type { Effect, ServerMessage, PlayerId } from './protocol.ts';
 import { parseClientMessage } from './protocol.ts';
 import { buildSongCatalog, YOUTUBE_CLIP_MS } from '../shared/songCatalog.ts';
 import type { RawSongRecord, SongConfig } from '../shared/songCatalog.ts';
-import { songQuestions, QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
+import { hangulInitials, songQuestions, toQuestionHint, QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
 import type { GameMode, Question } from '../shared/questions.ts';
 import { bundledBank } from './questionBanks.ts';
 import { selectQuestions } from './index.ts';
@@ -452,7 +453,20 @@ for (const [mode, bank] of [
 
     assert.equal(room.getPhase(), 'IN_ROUND', 'second and third place are still open');
     assert.equal(firstOfType(broadcasts(effects), 'ROUND_REVEAL'), undefined, 'nothing is revealed yet');
-    assert.equal(broadcasts(effects).length, 0, 'nobody else learns that a place was taken');
+
+    // The room *does* learn that first place is gone — that is the live scorer
+    // feed, and it is the only thing broadcast here. Narrowed rather than
+    // dropped: what must still not travel is any part of the answer or any
+    // word the player typed.
+    const public_ = broadcasts(effects);
+    assert.deepEqual(public_.map((message) => message.type), ['ROUND_SCORER']);
+    const scorer = firstOfType(public_, 'ROUND_SCORER');
+    assert.equal(scorer?.place, 1);
+    assert.equal(scorer?.nickname, room.getPlayer(players[0]!.id)?.nickname);
+    assert.equal(scorer?.pointsAwarded, 1);
+    for (const alias of question.aliases) {
+      assert.equal(JSON.stringify(public_).includes(alias), false, `"${alias}" was broadcast`);
+    }
   });
 
   test(`${mode}: the second correct answer scores 1 and the round still stays open`, () => {
@@ -565,7 +579,12 @@ for (const [mode, bank] of [
     assert.equal(room.getPhase(), 'IN_ROUND');
 
     const roundStart = 2_000 + COUNTDOWN_MS;
-    // A tick before the deadline changes nothing: the round is genuinely open.
+    // Halfway through, the hint goes out and the round carries on.
+    const halfway = room.tick(roundStart + TEXT_ROUND_MS - TEXT_HINT_REMAINING_MS);
+    assert.deepEqual(broadcasts(halfway).map((message) => message.type), ['ROUND_HINT']);
+    assert.equal(room.getPhase(), 'IN_ROUND');
+    // After that, a tick before the deadline changes nothing: the round is
+    // genuinely open and has nothing left to say until it ends.
     assert.deepEqual(room.tick(roundStart + TEXT_ROUND_MS - 1), []);
     assert.equal(room.getPhase(), 'IN_ROUND');
 
@@ -594,7 +613,15 @@ for (const [mode, bank] of [
     room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[0]!.id, at);
     room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[1]!.id, at + 1);
     assert.equal(room.getPhase(), 'IN_ROUND', 'two players can never fill three places');
-    assert.equal(room.getTimer()?.at, roundStart + TEXT_ROUND_MS, 'the deadline timer is still armed');
+    // The hint is armed first and the deadline behind it. Both are still the
+    // engine's single timer; nothing about the round's end has moved.
+    assert.equal(
+      room.getTimer()?.at,
+      roundStart + TEXT_ROUND_MS - TEXT_HINT_REMAINING_MS,
+      'the hint is what the round is waiting for first',
+    );
+    room.tick(roundStart + TEXT_ROUND_MS - TEXT_HINT_REMAINING_MS);
+    assert.equal(room.getTimer()?.at, roundStart + TEXT_ROUND_MS, 'the deadline timer is armed behind it');
 
     room.tick(roundStart + TEXT_ROUND_MS);
     assert.equal(room.getPhase(), 'REVEAL');
@@ -1927,4 +1954,269 @@ test('every question in a text game is a different one', () => {
   assert.equal(gameOvers, 1);
   assert.equal(room.getPhase(), 'FINISHED');
   assert.deepEqual(room.tick(clock + 60_000), [], 'FINISHED is terminal');
+});
+
+// --- The halfway hint and the live scorer feed -------------------------------
+
+/** When the first round of a room started by `startFirstRound(room, 2_000)`. */
+const TEXT_ROUND_START = 2_000 + COUNTDOWN_MS;
+const TEXT_HINT_AT = TEXT_ROUND_START + TEXT_ROUND_MS - TEXT_HINT_REMAINING_MS;
+
+/** The snapshot a player gets back when their socket returns mid-round. */
+function snapshotFor(room: GameRoom, token: string, now: number) {
+  const effects = room.handleMessage({ type: 'REJOIN', roomId: room.roomId, playerToken: token }, null, now);
+  const state = firstOfType(
+    effects.filter((e): e is Extract<Effect, { kind: 'send' }> => e.kind === 'send').map((e) => e.message),
+    'ROOM_STATE',
+  );
+  assert.ok(state, 'a rejoin must answer with a room state');
+  return state;
+}
+
+test('a text round is a minute long, and the song round is left exactly as it was', () => {
+  assert.equal(TEXT_ROUND_MS, 60_000, 'a proverb or idiom round is one minute');
+  assert.equal(TEXT_HINT_REMAINING_MS, 30_000, 'the hint arrives with thirty seconds left');
+
+  const songRoom = newRoom();
+  join(songRoom, '하나', 1_000);
+  const song = firstOfType(broadcasts(startFirstRound(songRoom, 2_000)), 'ROUND_START');
+  assert.ok(song, 'a song round still starts');
+  assert.equal(song.deadline - song.serverStartedAt, ROUND_MS, 'a song round keeps its own length');
+
+  const room = textRoom('proverb', PROVERB_BANK);
+  join(room, '하나', 1_000);
+  const text = firstOfType(broadcasts(startFirstRound(room, 2_000)), 'ROUND_START');
+  assert.ok(text);
+  assert.equal(text.deadline - text.serverStartedAt, TEXT_ROUND_MS);
+  assert.equal(text.question.durationMs, TEXT_ROUND_MS);
+  // The clock is public from the first millisecond; what the hint says is not,
+  // until it is due. So ROUND_START has no field for one at all.
+  assert.equal(Object.hasOwn(text, 'hint'), false, 'ROUND_START must carry no hint field');
+  assert.equal(room.getTimer()?.at, TEXT_HINT_AT, 'the hint is the first thing the round waits for');
+});
+
+for (const [mode, bank] of [
+  ['proverb', PROVERB_BANK],
+  ['idiom', IDIOM_BANK],
+] as const) {
+  test(`${mode}: nothing about the hint exists before the halfway mark`, () => {
+    const { room, players, question } = textRoomWithPlayers(mode, bank, 3);
+    const hint = toQuestionHint(question);
+    assert.ok(hint !== null && hint !== '');
+
+    // Not on the wire.
+    assert.deepEqual(room.tick(TEXT_HINT_AT - 1), [], 'a tick one millisecond early says nothing');
+
+    // And not in a snapshot, which is the other way a client could ask for it.
+    const snapshot = snapshotFor(room, players[0]!.token, TEXT_HINT_AT - 1);
+    assert.equal(snapshot.round?.hint, null, 'a reconnect must not buy an early hint');
+    assert.equal(JSON.stringify(snapshot).includes(hint), false, 'the hint text is nowhere in the snapshot');
+  });
+
+  test(`${mode}: exactly one hint goes out, with thirty seconds left`, () => {
+    const { room, question } = textRoomWithPlayers(mode, bank, 3);
+
+    const effects = room.tick(TEXT_HINT_AT);
+    assert.deepEqual(broadcasts(effects).map((message) => message.type), ['ROUND_HINT']);
+    const hint = firstOfType(broadcasts(effects), 'ROUND_HINT');
+    assert.ok(hint, 'the hint is due');
+    assert.equal(hint.hint, toQuestionHint(question));
+    assert.equal(room.getPhase(), 'IN_ROUND', 'the round carries on for the second half');
+
+    // Whatever it says, it is not the answer.
+    for (const alias of question.aliases) {
+      assert.equal(hint.hint.includes(alias), false, `the hint gave away "${alias}"`);
+    }
+    if (question.mode === 'idiom') {
+      assert.equal(hint.hint, hangulInitials(question.answer));
+      assert.equal([...hint.hint].length, 4, 'four syllables, four marks');
+    }
+
+    // Ticking again cannot produce a second one, however often it is called.
+    assert.deepEqual(room.tick(TEXT_HINT_AT + 1), []);
+    assert.deepEqual(room.tick(TEXT_HINT_AT + 5_000), []);
+    assert.equal(room.getTimer()?.at, TEXT_ROUND_START + TEXT_ROUND_MS, 'the deadline is all that is left');
+  });
+
+  test(`${mode}: a pause before the hint moves it, and never duplicates it`, () => {
+    const { room } = textRoomWithPlayers(mode, bank, 3);
+    const pausedAt = TEXT_ROUND_START + 10_000;
+    const pausedFor = 20_000;
+
+    room.handleMessage({ type: 'HOST_PAUSE', hostToken: room.hostToken }, null, pausedAt);
+    // A pause spends no answering time, so nothing is due while it lasts.
+    assert.deepEqual(room.tick(TEXT_HINT_AT), [], 'the hint must not fire through a pause');
+
+    const resumed = firstOfType(
+      broadcasts(room.handleMessage({ type: 'HOST_RESUME', hostToken: room.hostToken }, null, pausedAt + pausedFor)),
+      'ROUND_RESUMED',
+    );
+    assert.ok(resumed);
+    assert.equal(resumed.newDeadline, TEXT_ROUND_START + TEXT_ROUND_MS + pausedFor, 'the deadline moved by the pause');
+
+    // The hint moved by exactly the same twenty seconds, so it still lands with
+    // thirty seconds of answering time left.
+    assert.deepEqual(room.tick(TEXT_HINT_AT + pausedFor - 1), []);
+    assert.deepEqual(room.tick(TEXT_HINT_AT + pausedFor).map((effect) => effect.kind), ['broadcast']);
+    assert.equal(resumed.newDeadline - (TEXT_HINT_AT + pausedFor), TEXT_HINT_REMAINING_MS);
+  });
+
+  test(`${mode}: a pause after the hint does not send it a second time`, () => {
+    const { room } = textRoomWithPlayers(mode, bank, 3);
+    assert.ok(firstOfType(broadcasts(room.tick(TEXT_HINT_AT)), 'ROUND_HINT'));
+
+    const pausedAt = TEXT_HINT_AT + 5_000;
+    room.handleMessage({ type: 'HOST_PAUSE', hostToken: room.hostToken }, null, pausedAt);
+    const effects = room.handleMessage({ type: 'HOST_RESUME', hostToken: room.hostToken }, null, pausedAt + 9_000);
+
+    assert.deepEqual(broadcasts(effects).map((message) => message.type), ['ROUND_RESUMED']);
+    assert.equal(firstOfType(broadcasts(room.tick(pausedAt + 9_000)), 'ROUND_HINT'), undefined);
+    assert.equal(room.getTimer()?.kind, 'DEADLINE', 'only the end of the round is still pending');
+  });
+
+  test(`${mode}: first, second and third are announced to the room in order`, () => {
+    const { room, players, at, question } = textRoomWithPlayers(mode, bank, 4);
+    const guess = question.aliases[0] as string;
+
+    const announced: { place: number; nickname: string; pointsAwarded: number }[] = [];
+    for (const [offset, player] of players.slice(0, 3).entries()) {
+      const effects = room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, player.id, at + offset);
+      for (const message of broadcasts(effects)) {
+        if (message.type !== 'ROUND_SCORER') continue;
+        announced.push({ place: message.place, nickname: message.nickname, pointsAwarded: message.pointsAwarded });
+      }
+    }
+
+    assert.deepEqual(
+      announced,
+      [
+        { place: 1, nickname: 'p0', pointsAwarded: 1 },
+        { place: 2, nickname: 'p1', pointsAwarded: 1 },
+        { place: 3, nickname: 'p2', pointsAwarded: 1 },
+      ],
+      '1등, 2등, 3등 — in the order the server accepted them',
+    );
+    assert.equal(room.getPhase(), 'REVEAL', 'the third place closes the round');
+  });
+
+  test(`${mode}: a reconnect restores what was already public, and nothing else`, () => {
+    const { room, players, at, question } = textRoomWithPlayers(mode, bank, 4);
+    const guess = question.aliases[0] as string;
+
+    room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[0]!.id, at);
+    room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[1]!.id, at + 1);
+
+    // Before the hint: two places restored, no hint.
+    const early = snapshotFor(room, players[3]!.token, TEXT_HINT_AT - 1);
+    assert.equal(early.round?.hint, null);
+    assert.deepEqual(
+      early.round?.scorers.map((scorer) => [scorer.place, scorer.nickname]),
+      [
+        [1, 'p0'],
+        [2, 'p1'],
+      ],
+    );
+
+    // After it: the same two places, and now the hint as well.
+    room.tick(TEXT_HINT_AT);
+    const late = snapshotFor(room, players[3]!.token, TEXT_HINT_AT + 1);
+    assert.equal(late.round?.hint, toQuestionHint(question));
+    assert.equal(late.round?.scorers.length, 2);
+
+    // Neither snapshot carries a word of the answer.
+    for (const alias of question.aliases) {
+      assert.equal(JSON.stringify([early, late]).includes(alias), false, `"${alias}" was in a snapshot`);
+    }
+  });
+
+  test(`${mode}: wrong, duplicate and late guesses stay out of the public feed`, () => {
+    const { room, players, at, question } = textRoomWithPlayers(mode, bank, 4);
+    const guess = question.aliases[0] as string;
+
+    // A miss.
+    assert.deepEqual(
+      broadcasts(room.handleMessage({ type: 'SUBMIT_ANSWER', guess: '전혀 다른 말' }, players[0]!.id, at)),
+      [],
+      'a miss is nobody else’s business',
+    );
+
+    // A hit, then the same player again.
+    room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[0]!.id, at + 1);
+    assert.deepEqual(
+      broadcasts(room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[0]!.id, at + 2)),
+      [],
+      'one place per player, announced once',
+    );
+
+    // And a fourth correct answer, after the round has already closed.
+    room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[1]!.id, at + 3);
+    room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[2]!.id, at + 4);
+    const tooLate = room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, players[3]!.id, at + 5);
+    assert.equal(firstOfType(broadcasts(tooLate), 'ROUND_SCORER'), undefined, 'there is no fourth place to announce');
+  });
+}
+
+test('a malformed frame produces no scorer and no hint, because it produces nothing', () => {
+  // The parser is the first gate: a frame that does not survive it never
+  // reaches the engine, so there is no path from one to a public message.
+  for (const raw of ['not json', '{"type":"SUBMIT_ANSWER"}', '{"type":"ROUND_SCORER","place":1}', 'null']) {
+    assert.equal(parseClientMessage(raw), null, `${raw} must not parse`);
+  }
+});
+
+test('a song round emits neither a hint nor a live scorer', () => {
+  const { room, players, at } = roomWithPlayers(4);
+
+  const everything: Effect[] = [
+    ...room.tick(TEXT_ROUND_START + 1),
+    ...room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, players[0]!.id, at),
+  ];
+  const types = broadcasts(everything).map((message) => message.type);
+  assert.equal(types.includes('ROUND_HINT'), false, 'a song round has no hint to give');
+  assert.equal(types.includes('ROUND_SCORER'), false, 'a song round announces its winner at the reveal');
+  assert.ok(types.includes('ROUND_REVEAL'), 'and the reveal still happens');
+});
+
+test('a song round snapshot says explicitly that there is no hint and nobody announced', () => {
+  // Explicitly empty rather than merely absent: a song round *has* a scorer as
+  // soon as somebody is right — it is just not public until the reveal.
+  const room = newRoom();
+  const player = join(room, '하나', 1_000);
+  const other = join(room, '둘', 1_001);
+  startFirstRound(room, 2_000);
+  room.handleMessage({ type: 'SUBMIT_ANSWER', guess: 'Dynamite' }, other.id, TEXT_ROUND_START + 10);
+
+  const snapshot = snapshotFor(room, player.token, TEXT_ROUND_START + 20);
+  assert.equal(snapshot.round, undefined, 'that answer ended the round');
+
+  const fresh = newRoom();
+  const watcher = join(fresh, '셋', 1_000);
+  startFirstRound(fresh, 2_000);
+  const live = snapshotFor(fresh, watcher.token, TEXT_ROUND_START + 20);
+  assert.equal(live.round?.hint, null);
+  assert.deepEqual(live.round?.scorers, []);
+});
+
+test('skipping a round cancels the hint that was still to come', () => {
+  const { room } = textRoomWithPlayers('proverb', PROVERB_BANK, 3);
+  assert.equal(room.getTimer()?.kind, 'HINT');
+
+  room.handleMessage({ type: 'HOST_SKIP', hostToken: room.hostToken }, null, TEXT_ROUND_START + 1_000);
+  assert.equal(room.getPhase(), 'REVEAL');
+  assert.equal(room.getTimer()?.kind, 'REVEAL', 'the skipped round left no hint behind');
+  assert.equal(
+    broadcasts(room.tick(TEXT_HINT_AT)).some((message) => message.type === 'ROUND_HINT'),
+    false,
+  );
+});
+
+test('a round closed by its third scorer cancels the hint too', () => {
+  const { room, players, at, question } = textRoomWithPlayers('idiom', IDIOM_BANK, 3);
+  const guess = question.aliases[0] as string;
+  for (const [offset, player] of players.entries()) {
+    room.handleMessage({ type: 'SUBMIT_ANSWER', guess }, player.id, at + offset);
+  }
+  assert.equal(room.getPhase(), 'REVEAL', 'three places filled before the halfway mark');
+  assert.equal(room.getTimer()?.kind, 'REVEAL');
+  assert.equal(firstOfType(broadcasts(room.tick(TEXT_HINT_AT)), 'ROUND_HINT'), undefined);
 });

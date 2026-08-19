@@ -15,6 +15,7 @@ import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { startServer } from './index.ts';
 import { acceptKey, decodeFrame, encodeFrame } from './websocket.ts';
+import { TEXT_ROUND_MS } from './gameRoom.ts';
 import { PROVERB_BANK } from './questionBanks.ts';
 import type { ServerMessage } from './protocol.ts';
 import { QUESTIONS_PER_TEXT_GAME } from '../shared/questions.ts';
@@ -289,14 +290,32 @@ test('a proverb room plays over real sockets without the answer ever crossing th
     assert.equal(accepted.place, 1);
     assert.equal(accepted.pointsAwarded, 1);
 
+    // First place is announced to the room as it happens, and reaches the
+    // player who did not take it. That is the live scorer feed over a real
+    // socket rather than over an effect list.
+    const firstPlace = await host.waitFor('ROUND_SCORER');
+    assert.equal(firstPlace.place, 1);
+    assert.equal(firstPlace.nickname, '참가자');
+    assert.equal(firstPlace.pointsAwarded, 1);
+
     // The whole proverb is a correct answer too, from a different player.
     host.send({ type: 'SUBMIT_ANSWER', guess: question.full });
     const second = await host.waitFor('ANSWER_ACCEPTED');
     assert.equal(second.place, 2);
     assert.equal(second.pointsAwarded, 1);
 
+    // The hint lands halfway through, once, and says nothing that answers the
+    // question. It is the last public thing before the reveal.
+    const hint = await guest.waitFor('ROUND_HINT', TEXT_ROUND_MS);
+    assert.ok(hint.hint.length > 0);
+    for (const alias of question.aliases) {
+      assert.equal(hint.hint.includes(alias), false, `the hint gave away "${alias}"`);
+    }
+
     // Two of three places taken, so the deadline is what ends this round.
-    const reveal = await guest.waitFor('ROUND_REVEAL', 40_000);
+    const reveal = await guest.waitFor('ROUND_REVEAL', TEXT_ROUND_MS + 10_000);
+    assert.equal(guest.countOf('ROUND_HINT'), 1, 'exactly one hint per round');
+    assert.equal(guest.countOf('ROUND_SCORER'), 2, 'one per place taken, and no more');
     assert.equal(reveal.answer.mode, 'proverb');
     assert.equal(reveal.answer.answer, question.full);
     assert.equal(reveal.answer.detail, question.suffix);

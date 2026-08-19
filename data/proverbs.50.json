@@ -3,7 +3,10 @@
     "속담 맞히기 50문항 문제 은행.",
     "prefix만 문제로 공개하고 full/suffix/aliases는 정답 공개 전 서버에만 보관합니다.",
     "정답은 전체 속담과 suffix를 기본 인정하며 aliases는 널리 쓰이는 변형 표기입니다.",
-    "난이도 구성: 50문항 모두 medium. 게임마다 전체를 섞어 30문항만 중복 없이 뽑습니다."
+    "난이도 구성: 50문항 모두 medium. 게임마다 전체를 섞어 30문항만 중복 없이 뽑습니다.",
+    "hint 는 남은 시간 30초에 방 전체에 한 번 공개하는 핵심 낱말입니다.",
+    "정답(suffix·full)을 통째로 담으면 안 됩니다 — 서버가 은행을 읽을 때 막습니다.",
+    "hint 가 없는 문제도 그대로 돌아가며, 정답을 흘리지 않는 안내 문구가 대신 나갑니다."
   ],
   "proverbs": [
     {
@@ -13,6 +16,7 @@
       "suffix": "오는 말이 곱다",
       "aliases": ["오는 말도 곱다"],
       "difficulty": "medium",
+      "hint": "오는 말",
       "explanation": "내가 남에게 좋게 말하고 행동해야 상대도 나를 좋게 대한다."
     },
     {
@@ -22,6 +26,7 @@
       "suffix": "밤말은 쥐가 듣는다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "밤에 하는 말, 그리고 쥐",
       "explanation": "아무리 비밀스럽게 한 말도 결국 남의 귀에 들어갈 수 있으니 조심해야 한다."
     },
     {
@@ -31,6 +36,7 @@
       "suffix": "태산",
       "aliases": ["태산이 된다"],
       "difficulty": "medium",
+      "hint": "아주 큰 산",
       "explanation": "아주 작은 것도 꾸준히 모으면 큰 결과가 된다."
     },
     {
@@ -40,6 +46,7 @@
       "suffix": "나무에서 떨어진다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "나무",
       "explanation": "아무리 능숙한 사람도 실수할 때가 있다."
     },
     {
@@ -49,6 +56,7 @@
       "suffix": "여든까지 간다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "여든",
       "explanation": "어릴 때 생긴 버릇은 늙어서도 고치기 어렵다."
     },
     {
@@ -58,6 +66,7 @@
       "suffix": "외양간 고친다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "외양간",
       "explanation": "일이 잘못된 뒤에야 뒤늦게 대비하는 어리석음을 이른다."
     },
     {
@@ -67,6 +76,7 @@
       "suffix": "천 리 간다",
       "aliases": ["천리 간다"],
       "difficulty": "medium",
+      "hint": "천 리",
       "explanation": "말은 매우 빠르게 퍼지므로 말조심해야 한다."
     },
     {
@@ -76,6 +86,7 @@
       "suffix": "맞들면 낫다",
       "aliases": ["맞들면 가볍다"],
       "difficulty": "medium",
+      "hint": "맞들면",
       "explanation": "쉬운 일도 서로 힘을 합치면 더 수월하다."
     },
     {
@@ -85,6 +96,7 @@
       "suffix": "연기 날까",
       "aliases": ["연기 나랴"],
       "difficulty": "medium",
+      "hint": "연기",
       "explanation": "어떤 소문이나 결과에는 대개 원인이 있기 마련이다."
     },
     {
@@ -94,6 +106,7 @@
       "suffix": "배꼽이 더 크다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "배꼽",
       "explanation": "주된 것보다 부수적인 것이 더 크거나 비용이 더 많이 든다."
     },
     {
@@ -103,6 +116,7 @@
       "suffix": "제 말 하면 온다",
       "aliases": ["제 말 하면 온다더니"],
       "difficulty": "medium",
+      "hint": "제 말 하면",
       "explanation": "어떤 사람 이야기를 하는데 마침 그 사람이 나타날 때 쓰는 말이다."
     },
     {
@@ -112,6 +126,7 @@
       "suffix": "게 편이다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "같은 편",
       "explanation": "모양이나 처지가 비슷한 사람끼리 서로 편을 든다."
     },
     {
@@ -121,6 +136,7 @@
       "suffix": "용 난다",
       "aliases": ["용이 난다"],
       "difficulty": "medium",
+      "hint": "용",
       "explanation": "변변하지 못한 환경에서도 훌륭한 인물이 나올 수 있다."
     },
     {
@@ -130,6 +146,7 @@
       "suffix": "아니 넘어가는 나무 없다",
       "aliases": ["안 넘어가는 나무 없다"],
       "difficulty": "medium",
+      "hint": "넘어가지 않는 나무",
       "explanation": "끈기 있게 계속 노력하면 결국 뜻을 이룰 수 있다."
     },
     {
@@ -139,6 +156,7 @@
       "suffix": "기역 자도 모른다",
       "aliases": ["ㄱ자도 모른다", "기역자도 모른다"],
       "difficulty": "medium",
+      "hint": "기역 자",
       "explanation": "아주 무식하여 쉬운 글자조차 모르는 사람을 이른다."
     },
     {
@@ -148,6 +166,7 @@
       "suffix": "떡 하나 더 준다",
       "aliases": ["떡 하나 더 준다더니"],
       "difficulty": "medium",
+      "hint": "떡 하나",
       "explanation": "미운 사람일수록 겉으로 더 잘 대해 감정을 드러내지 않는다는 말이다."
     },
     {
@@ -157,6 +176,7 @@
       "suffix": "요란하다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "요란한 소리",
       "explanation": "실속 없는 사람이 오히려 더 떠들고 잘난 체한다."
     },
     {
@@ -166,6 +186,7 @@
       "suffix": "풍월을 읊는다",
       "aliases": ["풍월을 한다"],
       "difficulty": "medium",
+      "hint": "풍월",
       "explanation": "어떤 환경에 오래 있으면 자연스럽게 그 일에 대한 지식이 생긴다."
     },
     {
@@ -175,6 +196,7 @@
       "suffix": "비지떡",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "값싼 떡",
       "explanation": "값이 싼 물건은 대체로 품질도 좋지 않다는 말이다."
     },
     {
@@ -184,6 +206,7 @@
       "suffix": "한 길 사람 속은 모른다",
       "aliases": ["한길 사람 속은 모른다"],
       "difficulty": "medium",
+      "hint": "사람 속",
       "explanation": "겉으로 보이는 것과 달리 사람의 속마음은 알기 어렵다."
     },
     {
@@ -193,6 +216,7 @@
       "suffix": "아랫물이 맑다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "아랫물",
       "explanation": "윗사람이 바르게 행동해야 아랫사람도 바르게 행동한다."
     },
     {
@@ -202,6 +226,7 @@
       "suffix": "밟으면 꿈틀한다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "밟으면",
       "explanation": "아무리 약한 사람도 지나치게 괴롭히면 반항한다."
     },
     {
@@ -211,6 +236,7 @@
       "suffix": "별 따기",
       "aliases": ["별을 따기"],
       "difficulty": "medium",
+      "hint": "별",
       "explanation": "무엇을 이루거나 얻기가 매우 어렵다는 뜻이다."
     },
     {
@@ -220,6 +246,7 @@
       "suffix": "범 무서운 줄 모른다",
       "aliases": ["호랑이 무서운 줄 모른다"],
       "difficulty": "medium",
+      "hint": "범",
       "explanation": "철없이 겁 없이 덤비는 사람을 이른다."
     },
     {
@@ -229,6 +256,7 @@
       "suffix": "팥 심은 데 팥 난다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "팥",
       "explanation": "모든 결과에는 그에 맞는 원인이 있다."
     },
     {
@@ -238,6 +266,7 @@
       "suffix": "커 보인다",
       "aliases": ["더 커 보인다"],
       "difficulty": "medium",
+      "hint": "크기",
       "explanation": "자기 것보다 남의 것이 더 좋아 보이기 쉽다."
     },
     {
@@ -247,6 +276,7 @@
       "suffix": "두들겨 보고 건너라",
       "aliases": ["두드려 보고 건너라"],
       "difficulty": "medium",
+      "hint": "두들겨",
       "explanation": "잘 아는 일도 확인하며 조심해서 해야 한다."
     },
     {
@@ -256,6 +286,7 @@
       "suffix": "개구리",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "우물 밖을 모르는 동물",
       "explanation": "경험과 시야가 좁아 넓은 세상을 모르는 사람을 이른다."
     },
     {
@@ -265,6 +296,7 @@
       "suffix": "발등 찍힌다",
       "aliases": ["발등을 찍힌다"],
       "difficulty": "medium",
+      "hint": "발등",
       "explanation": "믿었던 사람에게 배신당하거나 기대가 어긋난다."
     },
     {
@@ -274,6 +306,7 @@
       "suffix": "새우 등 터진다",
       "aliases": ["새우등 터진다"],
       "difficulty": "medium",
+      "hint": "새우",
       "explanation": "강한 사람들의 다툼 때문에 약한 사람이 피해를 본다."
     },
     {
@@ -283,6 +316,7 @@
       "suffix": "어둡다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "바로 아래가 잘 안 보인다",
       "explanation": "가까이에 있는 것을 오히려 알아차리지 못하기 쉽다."
     },
     {
@@ -292,6 +326,7 @@
       "suffix": "반이다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "절반",
       "explanation": "무슨 일이든 시작하기가 어렵고, 일단 시작하면 절반은 이룬 셈이다."
     },
     {
@@ -301,6 +336,7 @@
       "suffix": "닭",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "꿩과 비슷한 날짐승",
       "explanation": "적당한 것이 없을 때 비슷한 다른 것으로 대신한다."
     },
     {
@@ -310,6 +346,7 @@
       "suffix": "낙이 온다",
       "aliases": ["즐거움이 온다"],
       "difficulty": "medium",
+      "hint": "낙",
       "explanation": "어려움을 견디고 나면 좋은 일이 찾아온다."
     },
     {
@@ -319,6 +356,7 @@
       "suffix": "식후경",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "먼저 밥부터",
       "explanation": "아무리 좋은 일도 배를 채운 뒤에야 제대로 즐길 수 있다."
     },
     {
@@ -328,6 +366,7 @@
       "suffix": "침 뱉기",
       "aliases": ["침을 뱉기"],
       "difficulty": "medium",
+      "hint": "침",
       "explanation": "남을 해치려 한 일이 결국 자기에게 해가 되어 돌아온다."
     },
     {
@@ -337,6 +376,7 @@
       "suffix": "지붕 쳐다보듯",
       "aliases": ["지붕만 쳐다본다", "지붕 쳐다본다"],
       "difficulty": "medium",
+      "hint": "지붕",
       "explanation": "애써 하던 일이 실패하여 어찌할 도리가 없어진 모습을 이른다."
     },
     {
@@ -346,6 +386,7 @@
       "suffix": "키 재기",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "키",
       "explanation": "서로 비슷비슷하여 우열을 가리기 어려운 사람끼리 비교한다."
     },
     {
@@ -355,6 +396,7 @@
       "suffix": "천 냥 빚도 갚는다",
       "aliases": ["천냥 빚도 갚는다"],
       "difficulty": "medium",
+      "hint": "천 냥 빚",
       "explanation": "말을 잘하면 큰 어려움도 해결할 수 있다."
     },
     {
@@ -364,6 +406,7 @@
       "suffix": "서울만 가면 된다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "서울",
       "explanation": "방법이 어떻든 목적만 이루면 된다는 뜻이다."
     },
     {
@@ -373,6 +416,7 @@
       "suffix": "고개를 숙인다",
       "aliases": ["고개를 숙인다더니"],
       "difficulty": "medium",
+      "hint": "고개",
       "explanation": "교양 있고 성숙한 사람일수록 겸손하다."
     },
     {
@@ -382,6 +426,7 @@
       "suffix": "배가 산으로 간다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "산으로",
       "explanation": "지시하는 사람이 너무 많으면 일이 엉뚱한 방향으로 흐른다."
     },
     {
@@ -391,6 +436,7 @@
       "suffix": "맵다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "매운맛",
       "explanation": "몸집이 작아도 재주나 힘이 뛰어날 수 있다."
     },
     {
@@ -400,6 +446,7 @@
       "suffix": "한 걸음부터",
       "aliases": ["첫걸음부터"],
       "difficulty": "medium",
+      "hint": "한 걸음",
       "explanation": "아무리 큰일도 작은 시작에서 출발한다."
     },
     {
@@ -409,6 +456,7 @@
       "suffix": "열을 안다",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "열",
       "explanation": "일부만 보고도 전체를 미루어 짐작할 수 있다."
     },
     {
@@ -418,6 +466,7 @@
       "suffix": "침 못 뱉는다",
       "aliases": ["침을 못 뱉는다"],
       "difficulty": "medium",
+      "hint": "침",
       "explanation": "좋은 태도로 대하는 사람에게는 함부로 나쁘게 대하기 어렵다."
     },
     {
@@ -427,6 +476,7 @@
       "suffix": "돌아가라",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "돌아서 가라",
       "explanation": "급한 때일수록 서두르지 말고 차분하고 안전하게 처리해야 한다."
     },
     {
@@ -436,6 +486,7 @@
       "suffix": "떡",
       "aliases": [],
       "difficulty": "medium",
+      "hint": "먹을 수 없는 것",
       "explanation": "마음에 들어도 실제로 이용하거나 가질 수 없는 것을 이른다."
     },
     {
@@ -445,6 +496,7 @@
       "suffix": "꿰어야 보배",
       "aliases": ["꿰어야 보배다"],
       "difficulty": "medium",
+      "hint": "보배",
       "explanation": "좋은 재료나 능력도 잘 다듬고 활용해야 가치가 생긴다."
     },
     {
@@ -454,6 +506,7 @@
       "suffix": "떡잎부터 알아본다",
       "aliases": ["떡잎부터 안다"],
       "difficulty": "medium",
+      "hint": "떡잎",
       "explanation": "크게 될 사람은 어릴 때부터 남다른 점이 드러난다."
     }
   ]

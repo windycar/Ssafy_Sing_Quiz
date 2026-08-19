@@ -838,6 +838,48 @@ button:disabled {
   padding: 10px;
 }
 
+/*
+  방 전체가 함께 보는 알림. 내 판정(.feedback)과 눈에 띄게 달라야 합니다.
+  하나는 나에게만 온 결과이고, 하나는 모두가 같이 보는 사실이기 때문입니다.
+*/
+.round-feed {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.round-feed li {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-left: 3px solid var(--line);
+  background: #faf9f5;
+  color: #3f434a;
+}
+.round-feed .feed-hint {
+  border-left-color: var(--lime);
+  background: var(--ink);
+  color: #f6f5f0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.round-feed .feed-hint b {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--lime);
+  flex: 0 0 auto;
+}
+/* 힌트 글자는 ㅇㅅㅇㅈ 처럼 자음만 오기도 해서 자간을 조금 벌립니다. */
+.round-feed .feed-hint span {
+  letter-spacing: 0.06em;
+}
+.round-feed .feed-scorer {
+  border-left-color: var(--ink);
+}
+
 .answer-form {
   border-top: 1px solid var(--line);
   padding: 13px;

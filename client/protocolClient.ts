@@ -100,6 +100,22 @@ export interface RoundView {
    * why a UI can read it without checking who it is rendering for.
    */
   cue: { youtubeId: string; startMs: number; playMs: number } | null;
+  /**
+   * The halfway hint, once the server has sent it. Null until then.
+   *
+   * Never derived here. This client has no answer to derive one from, and that
+   * is the point (integration-plan §1.5) — the field is only ever whatever
+   * `ROUND_HINT` or a snapshot put in it.
+   */
+  hint: string | null;
+  /**
+   * Who has scored so far this round, in the order the server accepted them.
+   *
+   * Populated in a proverb or idiom round, where places are announced live,
+   * and empty in a song round, which announces nothing before the reveal. A UI
+   * renders the list it is given and works out no places of its own.
+   */
+  scorers: RoundScorer[];
 }
 
 export interface RevealView {
@@ -258,6 +274,11 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
               // A host reconnecting mid-round gets its ROUND_CUE right after
               // this snapshot; a player never gets one.
               cue: state.round?.cue ?? null,
+              // Whatever was already public when the snapshot was taken. Before
+              // the hint is due the server sends null here, so a reconnect
+              // cannot buy an early hint.
+              hint: message.round.hint ?? null,
+              scorers: message.round.scorers ?? [],
             };
       return {
         ...state,
@@ -328,6 +349,11 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
           livePlayback: message.livePlayback,
           // ROUND_CUE arrives separately, and only for the host.
           cue: null,
+          // A new round starts with nothing public about its answer and nobody
+          // on the board. Both fill in from later messages, which is what
+          // clears the previous round's feed.
+          hint: null,
+          scorers: [],
         },
         reveal: null,
         answerFeedback: { kind: 'none' },
@@ -380,6 +406,31 @@ export function applyServerMessage(state: ClientState, message: ServerMessage, r
                 deadline: message.newDeadline,
               },
       };
+
+    case 'ROUND_HINT':
+      // Ignored without a round to attach it to: a hint on its own has nothing
+      // on screen to be a hint about, and holding it would show it against
+      // whichever round started next.
+      return state.round === null ? state : { ...state, round: { ...state.round, hint: message.hint } };
+
+    case 'ROUND_SCORER': {
+      if (state.round === null) return state;
+      // The server sends one of these per place, once. Re-delivery of the same
+      // place — a snapshot arriving beside the live message — must not print
+      // the same person twice, and `place` is what identifies it: the server
+      // owns the order, and this client never renumbers anything.
+      if (state.round.scorers.some((scorer) => scorer.place === message.place)) return state;
+      const scorer: RoundScorer = {
+        playerId: message.playerId,
+        nickname: message.nickname,
+        place: message.place,
+        pointsAwarded: message.pointsAwarded,
+      };
+      // Appended in arrival order, which is the order the server accepted them
+      // in — one connection delivers one room's messages in order, so there is
+      // nothing here for this client to sort out for itself.
+      return { ...state, round: { ...state.round, scorers: [...state.round.scorers, scorer] } };
+    }
 
     case 'ANSWER_ACCEPTED':
       return {

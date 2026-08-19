@@ -170,3 +170,38 @@ test('the layout is built for a phone first', () => {
   assert.ok(/\.clue-text[\s\S]*?clamp\(/u.test(CSS), 'the clue card must scale with the viewport');
   assert.ok(/\.clue-text[\s\S]*?word-break: keep-all/u.test(CSS), 'a Korean proverb must not break mid-word');
 });
+
+test('the answer panel has a public feed, and it renders only what the server broadcast', () => {
+  // The panel now shows two different things: my own verdict, which is private,
+  // and what the room shares. They need separate homes so one cannot be
+  // mistaken for the other.
+  assert.ok(HTML.includes('id="round-feed"'), 'no public feed in the answer panel');
+  const panel = /<div class="chat-log">[\s\S]*?<\/div>/u.exec(HTML)?.[0];
+  assert.ok(panel, 'the answer panel is gone');
+  assert.ok(panel.includes('id="answer-feedback"'), 'the private verdict still has its own node');
+  assert.ok(panel.includes('id="round-feed"'), 'the public feed sits in the same panel');
+  assert.ok(/id="round-feed"[^>]*aria-live/u.test(HTML), 'new entries have to be announced to a screen reader');
+
+  const feed = /function renderRoundFeed[\s\S]*?\n\}/u.exec(UI)?.[0];
+  assert.ok(feed, 'renderRoundFeed is gone');
+
+  // Both halves come straight off the round state, which is filled by
+  // ROUND_HINT and ROUND_SCORER and by nothing this file works out.
+  assert.ok(feed.includes('round.hint'), 'the hint must come from the server');
+  assert.ok(feed.includes('round.scorers'), 'the places must come from the server');
+  assert.equal(/scorers\.(slice|sort|filter)\(/u.test(feed), false, 'the client must not reorder the scorers');
+  assert.equal(/hangulInitials|toQuestionHint/u.test(UI), false, 'the client must not build a hint of its own');
+
+  // The exact line the room reads.
+  assert.ok(
+    feed.includes('`${scorer.place}등 - ${scorer.nickname}`'),
+    'the scorer line must read exactly "N등 - 닉네임"',
+  );
+  // As one text node, so a nickname can never be markup.
+  assert.ok(feed.includes('item.textContent ='), 'the scorer line must be set as text');
+
+  // Visually distinguishable, which is the accessibility half of the rule.
+  assert.ok(CSS.includes('.round-feed'), 'the public feed needs styling of its own');
+  assert.ok(CSS.includes('.feed-hint'), 'the hint has to look different from a place');
+  assert.ok(CSS.includes('.feed-scorer'));
+});

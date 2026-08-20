@@ -146,8 +146,8 @@ npx tsc --noEmit -p .
 
 의존성이 없으므로 실행과 테스트에는 `npm.cmd install`이 필요하지 않습니다
 (`tsc` 실행에만 TypeScript와 `@types/node`가 필요합니다). 현재 테스트는
-**271개**(`shared` 78개, `server` 159개, `client` 34개)이며 모두 통과해야
-합니다. `music-quiz/`는 빌드가 필요하므로 별도이며 **6개**입니다
+**321개**(`shared` 84개, `server` 192개, `client` 45개)이며 모두 통과해야
+합니다. `music-quiz/`는 빌드가 필요하므로 별도이며 **7개**입니다
 (`cd music-quiz && npm.cmd test`).
 Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 미만에서는 문법
 오류로 실패합니다.**

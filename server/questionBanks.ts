@@ -36,6 +36,15 @@ import type { LocalFileSpec } from './localFiles.ts';
 /** Problems found while loading a host's own bank. Empty on a clean start. */
 export const BANK_PROBLEMS: string[] = [];
 
+/**
+ * Things worth saying about a host's own bank that loaded fine.
+ *
+ * Separate from `BANK_PROBLEMS` because the cost is different and so is the
+ * remedy: nothing is missing from the game, but a round will play differently
+ * from how the rules read, and only the person who wrote the file can fix it.
+ */
+export const BANK_NOTICES: string[] = [];
+
 /** Which text mode a bank belongs to. `song` has no bank. */
 export type TextMode = 'proverb' | 'idiom';
 
@@ -98,6 +107,31 @@ export function bundledBank(mode: TextMode): readonly Question[] {
   return Object.freeze(source.build(readRecords(path, source.key), TEXT_BANK_SIZE));
 }
 
+/**
+ * The one thing a host's own bank can be missing without failing to load.
+ *
+ * `hint` arrived after the first hosts had already copied `문제/속담.json` out of
+ * `data/`, and a record without one still plays — `PROVERB_HINT_FALLBACK` goes
+ * out instead. That is the right behaviour and the wrong silence: the halfway
+ * hint is documented as a curated keyword, and a host whose file predates the
+ * field would only find out that every proverb round shows the generic line by
+ * watching one happen in front of the room.
+ *
+ * Returns null when there is nothing to say, which includes every idiom bank —
+ * an idiom's hint is the initials of its own answer, built at hint time, so
+ * there is no field for a file to be missing.
+ */
+export function missingHintNotice(questions: readonly Question[], path: string): string | null {
+  const missing = questions.filter((question) => question.mode === 'proverb' && question.hint === null).length;
+  if (missing === 0) return null;
+  return (
+    `${PROVERB_FILE.label} — ${questions.length}문항 중 ${missing}개에 "hint" 가 없습니다. ` +
+    '남은 30초에 나가는 힌트가 핵심 낱말 대신 일반 안내 문구로 나갑니다.\n' +
+    `    ${path}\n` +
+    `    문항마다 "hint": "낱말" 을 넣으면 됩니다 (예시: ${PROVERB_FILE.bundled}). 정답이 그대로 들어 있으면 거부합니다.`
+  );
+}
+
 /** Loads one bank, letting a bundled file fail hard and a host's file fail soft. */
 function loadBank(mode: TextMode): readonly Question[] {
   const source = SOURCES[mode];
@@ -107,7 +141,10 @@ function loadBank(mode: TextMode): readonly Question[] {
   try {
     // A host's own file may hold any number of questions; a bundled one is
     // held to the exact count, so a short bank cannot ship unnoticed.
-    return Object.freeze(source.build(readRecords(file.path, source.key), null));
+    const bank = Object.freeze(source.build(readRecords(file.path, source.key), null));
+    const notice = missingHintNotice(bank, file.path);
+    if (notice !== null) BANK_NOTICES.push(notice);
+    return bank;
   } catch (cause) {
     // The message already names the file; only the mode it costs is missing.
     BANK_PROBLEMS.push(`${source.spec.label} — ${(cause as Error).message}`);

@@ -22,7 +22,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './index.ts';
 import { PLAYLIST_FILE, PROJECT_ROOT, resolveLocalFile } from './localFiles.ts';
-import { BANK_PROBLEMS } from './questionBanks.ts';
+import { BANK_NOTICES, BANK_PROBLEMS } from './questionBanks.ts';
 import { resolvePlaylist } from './playlistLoader.ts';
 import { parsePlaylist } from '../shared/playlist.ts';
 import type { RawSongRecord } from '../shared/songCatalog.ts';
@@ -207,6 +207,14 @@ async function main(): Promise<void> {
     console.log('\n다음 문제 파일을 읽지 못해 해당 모드를 쓸 수 없습니다:');
     for (const problem of BANK_PROBLEMS) console.log(`  ${problem}`);
     console.log('  파일을 고치고 이 창을 닫았다 다시 실행하세요. 노래 모드는 그대로 됩니다.');
+  }
+
+  // A bank that loaded but will play differently from how the rules read. Not a
+  // reason to stop and fix anything before starting — the game is complete
+  // without it — so it says what will happen and leaves the choice alone.
+  if (BANK_NOTICES.length > 0) {
+    console.log('\n문제 파일은 읽었습니다. 다만 이대로 진행하면:');
+    for (const notice of BANK_NOTICES) console.log(`  ${notice}`);
   }
 
   const base = `http://localhost:${options.port}`;

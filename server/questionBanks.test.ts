@@ -15,10 +15,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bundledBank, IDIOM_BANK, PROVERB_BANK, textBankFor } from './questionBanks.ts';
+import { bundledBank, IDIOM_BANK, missingHintNotice, PROVERB_BANK, textBankFor } from './questionBanks.ts';
 import { selectQuestions } from './index.ts';
 import { normalizeAnswer } from '../shared/answerMatching.ts';
-import { QUESTIONS_PER_TEXT_GAME, TEXT_BANK_SIZE } from '../shared/questions.ts';
+import { buildProverbBank, QUESTIONS_PER_TEXT_GAME, TEXT_BANK_SIZE } from '../shared/questions.ts';
 import type { Question } from '../shared/questions.ts';
 
 const SHIPPED_PROVERBS = bundledBank('proverb');
@@ -101,6 +101,55 @@ test('every idiom is four characters in Hangul and in Hanja', () => {
     assert.ok(question.aliases.includes(normalizeAnswer(question.answer)));
     assert.ok(question.aliases.includes(normalizeAnswer(question.hanja ?? '')));
   }
+});
+
+// --- The notice a host's own proverb file can earn ---------------------------
+
+test('every shipped proverb carries a curated hint, so the bundled bank is silent', () => {
+  for (const question of SHIPPED_PROVERBS) {
+    assert.equal(question.mode, 'proverb');
+    if (question.mode !== 'proverb') continue;
+    assert.notEqual(question.hint, null, `${question.id} has no hint`);
+  }
+  assert.equal(missingHintNotice(SHIPPED_PROVERBS, '문제/속담.json'), null);
+});
+
+test('a proverb file written before hints existed says so, with a count and a path', () => {
+  // What a host who copied `문제/속담.json` out of `data/` before the field
+  // existed actually has: records that load and play, with no hint in any of
+  // them. The bank is fine; the halfway hint is not what the rules describe.
+  const hintless = buildProverbBank(
+    SHIPPED_PROVERBS.slice(0, 3).map((question) => {
+      assert.equal(question.mode, 'proverb');
+      if (question.mode !== 'proverb') throw new Error('fixture must be proverbs');
+      return { id: question.id, full: question.full, prefix: question.prefix, suffix: question.suffix };
+    }),
+    { expectedSize: null },
+  );
+
+  const notice = missingHintNotice(hintless, '문제/속담.json');
+  assert.notEqual(notice, null, 'a bank with no hints at all must be reported');
+  assert.match(notice ?? '', /3문항 중 3개/);
+  assert.match(notice ?? '', /문제\/속담\.json/);
+  // It must describe what happens rather than name the fallback's wording, and
+  // it must never quote a hint — the file it is complaining about has none, but
+  // a partly-curated one would.
+  assert.match(notice ?? '', /일반 안내 문구/);
+});
+
+test('one missing hint among many is counted, not rounded to all or nothing', () => {
+  const records = SHIPPED_PROVERBS.slice(0, 4).map((question, index) => {
+    assert.equal(question.mode, 'proverb');
+    if (question.mode !== 'proverb') throw new Error('fixture must be proverbs');
+    const record = { id: question.id, full: question.full, prefix: question.prefix, suffix: question.suffix };
+    return index === 0 ? record : { ...record, hint: question.hint ?? '낱말' };
+  });
+
+  assert.match(missingHintNotice(buildProverbBank(records, { expectedSize: null }), 'p.json') ?? '', /4문항 중 1개/);
+});
+
+test('an idiom bank never earns the notice — its hint is built, not stored', () => {
+  assert.equal(missingHintNotice(SHIPPED_IDIOMS, '문제/사자성어.json'), null);
 });
 
 test('textBankFor names a bank for each text mode and none for song', () => {

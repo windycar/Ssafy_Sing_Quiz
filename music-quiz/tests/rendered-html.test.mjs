@@ -152,3 +152,29 @@ test("the answer panel shows the server's hint and the places as they are taken"
   assert.match(css, /\.feed-hint/);
   assert.match(css, /\.feed-scorer/);
 });
+
+test("the React host plays private YouTube round cues without exposing the video", async () => {
+  const [page, player, css] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/YouTubeHostPlayer.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /case "ROUND_CUE"/, "the React event loop ignores the host's private cue");
+  assert.match(page, /youtubeRef\.current\?\.start/, "the cue never reaches the player");
+  assert.match(
+    page,
+    /<YouTubeHostPlayer[\s\S]{0,160}enabled=\{isHost\}/,
+    "the player must only be enabled for the host",
+  );
+  assert.match(page, /youtubeRef\.current\?\.pause/);
+  assert.match(page, /youtubeRef\.current\?\.resume/);
+  assert.match(page, /youtubeRef\.current\?\.stop/);
+
+  assert.match(player, /from "next\/script"/, "third-party scripts must use next/script");
+  assert.match(player, /https:\/\/www\.youtube\.com\/iframe_api/);
+  assert.match(player, /loadVideoById/);
+  assert.match(player, /controls: 0/);
+  assert.match(player, /origin: window\.location\.origin/);
+  assert.match(css, /\.youtube-host-mount[\s\S]{0,240}left: -10000px/);
+});

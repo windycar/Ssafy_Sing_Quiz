@@ -447,6 +447,20 @@ input:focus-visible {
 .host-controls,
 .sound-pill { border-radius: 14px; background: rgba(3,16,39,.82); backdrop-filter: blur(10px); }
 
+/* The YouTube title and video both reveal the answer. Keep the host-only
+   player rendered for browser playback, but outside the visible stage. */
+.youtube-host-mount {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 2px;
+  height: 2px;
+  overflow: hidden;
+  opacity: .001;
+  pointer-events: none;
+}
+.youtube-host-mount iframe { width: 2px !important; height: 2px !important; }
+
 .result-head h1 em { color: var(--blue); text-decoration-color: var(--lime); }
 .result-illustration {
   width: 230px;

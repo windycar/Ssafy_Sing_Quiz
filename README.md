@@ -71,7 +71,7 @@
 | 프로토콜 클라이언트 (재접속, 서버 시계 보정) | [`client/protocolClient.ts`](client/protocolClient.ts) | 구현·테스트 완료. 프레임워크 비의존 |
 | 웹 클라이언트 (방장/참가자 전 화면) | [`client/`](client) | 구현 완료. 브라우저에서 종단 확인 |
 | 두 브랜치를 합친 기록과 충돌 목록 | [`docs/integration-plan.md`](docs/integration-plan.md) | 통합 완료. 문서는 당시 판단을 보존한 이력 자료 |
-| React 클라이언트 (`music-quiz/`) | [`music-quiz/app/page.tsx`](music-quiz/app/page.tsx) | 권위 서버 연결 완료. 빌드·렌더 테스트와 로컬 방 생성 확인 완료 |
+| React 클라이언트 (`music-quiz/`) | [`music-quiz/app/page.tsx`](music-quiz/app/page.tsx) | 권위 서버 연결과 방장 전용 유튜브 재생 완료. 빌드·렌더 테스트와 로컬 방 생성 확인 완료 |
 | 유튜브 재생 · 곡 자동 인식 | [`shared/youtube.ts`](shared/youtube.ts) | 구현·테스트 완료 |
 | txt 플레이리스트 | [`shared/playlist.ts`](shared/playlist.ts), [`data/playlist.example.txt`](data/playlist.example.txt) | 구현·테스트 완료 |
 | 공개 주소 실행 (Cloudflare 터널) | [`scripts/host.ts`](scripts/host.ts) | 실제 터널로 종단 확인 |

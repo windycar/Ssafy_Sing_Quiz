@@ -147,7 +147,7 @@ npx tsc --noEmit -p .
 의존성이 없으므로 실행과 테스트에는 `npm.cmd install`이 필요하지 않습니다
 (`tsc` 실행에만 TypeScript와 `@types/node`가 필요합니다). 현재 테스트는
 **321개**(`shared` 84개, `server` 192개, `client` 45개)이며 모두 통과해야
-합니다. `music-quiz/`는 빌드가 필요하므로 별도이며 **7개**입니다
+합니다. `music-quiz/`는 빌드가 필요하므로 별도이며 **8개**입니다
 (`cd music-quiz && npm.cmd test`).
 Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 미만에서는 문법
 오류로 실패합니다.**
@@ -205,6 +205,7 @@ Node의 TypeScript 타입 제거 기능을 그대로 쓰기 때문에 **22.13 �
 | 경로 | 역할 |
 | --- | --- |
 | `app/page.tsx` | 홈/방장 설정/대기실/게임/결과 화면 전체를 담은 단일 클라이언트 컴포넌트. 판정·타이머·순위는 서버가 하고, 이 파일은 그리기만 합니다 |
+| `app/YouTubeHostPlayer.tsx` | 방장에게만 전달되는 `ROUND_CUE`를 받아 `문제/곡목록.txt`의 유튜브 하이라이트를 화면 밖 플레이어로 재생합니다 |
 | `app/gameServer.ts` | 게임 서버 주소 해석(`VITE_GAME_SERVER`)과 세션 토큰 보관(`sessionStorage`) |
 | `app/layout.tsx`, `app/globals.css` | 공통 레이아웃과 스타일 |
 | `build/sites-vite-plugin.ts` | `vite.config.ts`가 가져오는 빌드 플러그인. 이름이 `build/`라 무시될 뻔했으나 `.gitignore`에 예외가 걸려 있습니다 |

@@ -85,6 +85,24 @@ export interface RoundPublicState {
   hostGraceEndsAt: number | null;
   /** See `RoundStartMessage.livePlayback`. */
   livePlayback: boolean;
+  /**
+   * The halfway hint, once it has been broadcast, and null before that.
+   *
+   * Null is load-bearing: a client that joins or reconnects before the hint is
+   * due must not be able to read it out of the snapshot, which is exactly what
+   * a field populated at `ROUND_START` would let it do. See `ROUND_HINT`.
+   */
+  hint: string | null;
+  /**
+   * Everyone who has already scored this round, in acceptance order.
+   *
+   * Public in a proverb or idiom round, where the places are announced as they
+   * are taken, and always empty in a song round, which announces nothing until
+   * the reveal. Carries the same fields as the `ROUND_SCORER` messages a client
+   * present from the start would have collected — which is the point: a late
+   * join ends up with the same list either way.
+   */
+  scorers: RoundScorer[];
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +362,38 @@ export interface RoundScorer {
   pointsAwarded: number;
 }
 
+/**
+ * A place was just taken, announced to the room as it happens.
+ *
+ * Text modes only. A proverb round holds three places open for a full minute,
+ * and a room that learns none of them until the reveal cannot tell whether the
+ * race is still on — so the places are called out live, exactly as
+ * `1등 - 닉네임`.
+ *
+ * This carries no verdict about anybody's guess and no part of the answer: a
+ * nickname and a place say that someone was right, not what they typed. A song
+ * round emits none of these, because its first correct answer ends the round
+ * and `ROUND_REVEAL` follows immediately anyway.
+ */
+export interface RoundScorerMessage extends RoundScorer {
+  type: 'ROUND_SCORER';
+}
+
+/**
+ * The halfway hint, broadcast once per text round.
+ *
+ * Sent when half the answer window is gone and not a millisecond earlier — the
+ * server owns that clock, so no client can bring it forward. `hint` is the
+ * whole payload a client may render: the initial consonants of an idiom, or a
+ * proverb's curated keyword. It is never the answer, and the server never
+ * sends the answer alongside it.
+ */
+export interface RoundHintMessage {
+  type: 'ROUND_HINT';
+  /** Safe to display as-is. See `toQuestionHint`. */
+  hint: string;
+}
+
 export interface RoundRevealMessage {
   type: 'ROUND_REVEAL';
   /**
@@ -408,6 +458,8 @@ export type ServerMessage =
   | AnswerAcceptedMessage
   | AnswerRejectedMessage
   | AnswerTooLateMessage
+  | RoundScorerMessage
+  | RoundHintMessage
   | RoundRevealMessage
   | LeaderboardUpdateMessage
   | GameOverMessage

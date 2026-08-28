@@ -657,6 +657,51 @@ function renderFeedback(state: ClientState): void {
   }
 }
 
+/**
+ * The public half of the answer panel: the hint, then whoever has scored.
+ *
+ * Everything here came off the wire as `ROUND_HINT` or `ROUND_SCORER`. Nothing
+ * is worked out locally — no place is numbered here, no hint is derived from an
+ * answer this client does not have — so what a player sees is what the server
+ * decided the whole room may see.
+ *
+ * Rebuilt from `state.round` on every render rather than appended to, which is
+ * what makes the next round start empty: `ROUND_START` resets both fields, and
+ * a snapshot restoring the current round restores its entries with it.
+ *
+ * Text is set with `textContent`, never `innerHTML`. Nicknames are player-typed
+ * and go on screen unescaped otherwise.
+ */
+function renderRoundFeed(state: ClientState): void {
+  const list = el<HTMLUListElement>('round-feed');
+  list.replaceChildren();
+
+  const round = state.round;
+  if (round === null) return;
+
+  if (round.hint !== null) {
+    const item = document.createElement('li');
+    item.className = 'feed-hint';
+
+    const tag = document.createElement('b');
+    tag.textContent = '힌트';
+    const text = document.createElement('span');
+    text.textContent = round.hint;
+
+    item.append(tag, text);
+    list.append(item);
+  }
+
+  for (const scorer of round.scorers) {
+    const item = document.createElement('li');
+    item.className = 'feed-scorer';
+    // The exact line the room reads: "1등 - 닉네임". One text node, so the
+    // separator cannot be dropped by a stylesheet that hides a decoration.
+    item.textContent = `${scorer.place}등 - ${scorer.nickname}`;
+    list.append(item);
+  }
+}
+
 /** Placeholder text for the answer box, per mode. */
 const ANSWER_PLACEHOLDER: Record<GameMode, string> = {
   song: '곡 제목을 입력하세요',
@@ -729,6 +774,7 @@ function renderRound(state: ClientState): void {
   el<HTMLFormElement>('answer-form').hidden = round === null;
 
   renderFeedback(state);
+  renderRoundFeed(state);
   renderRanks(el<HTMLOListElement>('round-ranks'), state.leaderboard, state.playerId);
 }
 

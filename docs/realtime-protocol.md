@@ -178,6 +178,8 @@ Notes:
 | `ROUND_RESUMED`        | broadcast              | `{ type: 'ROUND_RESUMED'; newDeadline: number }` |
 | `ANSWER_ACCEPTED`      | private, to winner     | `{ type: 'ANSWER_ACCEPTED'; pointsAwarded: number }` |
 | `ANSWER_REJECTED`      | private, to sender     | `{ type: 'ANSWER_REJECTED'; guess: string }` |
+| `ROUND_SCORER`         | broadcast, **text modes only** | `{ type: 'ROUND_SCORER'; playerId: PlayerId; nickname: string; place: number; pointsAwarded: number }` — one per place as it is taken. Carries no verdict about anybody's guess and no part of the answer. A song round emits none: its first correct answer ends the round and `ROUND_REVEAL` follows immediately. |
+| `ROUND_HINT`           | broadcast, **text modes only** | `{ type: 'ROUND_HINT'; hint: string }` — exactly once per text round, when `TEXT_HINT_REMAINING_MS` of the answer window is left. `hint` is safe to display as-is: an idiom's initial consonants, or a proverb's curated keyword. Never the answer. |
 | `ROUND_REVEAL`         | broadcast              | `{ type: 'ROUND_REVEAL'; answer: QuestionRevealInfo; song: SongRevealInfo; winner: { playerId: PlayerId; nickname: string } \| null; scorers: RoundScorer[]; leaderboard: LeaderboardEntry[] }` — the first message in a round allowed to carry any part of the answer |
 | `LEADERBOARD_UPDATE`   | broadcast              | `{ type: 'LEADERBOARD_UPDATE'; topFive: LeaderboardEntry[]; you: LeaderboardEntry }` (see §6 — per-connection payload) |
 | `GAME_OVER`            | broadcast              | `{ type: 'GAME_OVER'; finalRanks: LeaderboardEntry[] }` (all 1–20, per product spec) |
@@ -196,8 +198,15 @@ interface RoundPublicState {
   pausedAt: number | null;
   hostAway: boolean;             // the pause is an outage, not a break
   hostGraceEndsAt: number | null; // epoch ms; when the server stops waiting
+  hint: string | null;           // whatever ROUND_HINT sent; null before it did
+  scorers: RoundScorer[];        // places already announced; always [] in a song round
 }
 ```
+
+`hint` and `scorers` exist so that a late join or a reconnect ends up with the
+same feed as a client that was present from the start — no more and no less.
+Before the hint is due the server sends `hint: null`, so a reconnect cannot buy
+an early one.
 
 ### An absent host
 
@@ -234,8 +243,9 @@ Each row is `(current phase, trigger) -> (next phase, server action)`.
 | Current phase | Trigger | Next phase | Server action |
 | -------------- | ------- | ---------- | -------------- |
 | `LOBBY` | `HOST_START` | `COUNTDOWN` | Validate `hostToken`; if fewer than 1 player, reject with `ERROR('NOT_ENOUGH_PLAYERS')` instead of transitioning. |
-| `COUNTDOWN` | fixed timer elapses (e.g. 3000ms, not host-configurable) | `IN_ROUND` | Load the next `Question`, build `AliasMatcher` via `createAliasMatcher(question.aliases)`, broadcast `ROUND_START`. `deadline = now + (clipEndMs - clipStartMs) + ANSWER_GRACE_MS` in song mode; `now + TEXT_ROUND_MS` (30 s) in a text mode, where there is no clip to wait for. |
-| `IN_ROUND` | `SUBMIT_ANSWER` matches, and a scoring place is free | `IN_ROUND` or `REVEAL` | Append the player to `round.scorers`, award `POINTS_BY_PLACE[mode][place - 1]`, send `ANSWER_ACCEPTED` **to that player only**. If the last place is now taken, resolve: broadcast `ROUND_REVEAL`. Otherwise stay in `IN_ROUND` — nothing is broadcast, so a player still guessing learns nothing. |
+| `COUNTDOWN` | fixed timer elapses (e.g. 3000ms, not host-configurable) | `IN_ROUND` | Load the next `Question`, build `AliasMatcher` via `createAliasMatcher(question.aliases)`, broadcast `ROUND_START`. `deadline = now + (clipEndMs - clipStartMs) + ANSWER_GRACE_MS` in song mode; `now + TEXT_ROUND_MS` (60 s) in a text mode, where there is no clip to wait for. Arm the hint at `deadline - TEXT_HINT_REMAINING_MS` in a text mode; a song round has no hint. |
+| `IN_ROUND` | `SUBMIT_ANSWER` matches, and a scoring place is free | `IN_ROUND` or `REVEAL` | Append the player to `round.scorers`, award `POINTS_BY_PLACE[mode][place - 1]`, send `ANSWER_ACCEPTED` **to that player only**. In a text mode also broadcast `ROUND_SCORER` — the place is public, the guess is not. If the last place is now taken, resolve: broadcast `ROUND_REVEAL`. Otherwise stay in `IN_ROUND`. |
+| `IN_ROUND` | `TEXT_HINT_REMAINING_MS` left, text mode, hint not yet sent | `IN_ROUND` | Broadcast `ROUND_HINT` once, record it on the round so a snapshot carries it, and re-arm the deadline. A pause moves this moment by exactly what it moves the deadline by; skip, an early resolve and the reveal all cancel it. |
 | `IN_ROUND` | `SUBMIT_ANSWER` matches, but the player already scored, or every place is taken | `IN_ROUND` | Send `ANSWER_TOO_LATE`, which carries no verdict. No points, and no place is consumed. |
 | `IN_ROUND` | deadline reached with fewer scorers than places | `REVEAL` | Broadcast `ROUND_REVEAL` with whoever did score, in order, keeping their points. `winner` is null if nobody did. |
 | `IN_ROUND` | `HOST_SKIP` | `REVEAL` | Same as timeout path — treat skip as an immediate, host-triggered timeout (winner is whatever was already locked in, if any race with a just-arrived correct answer is resolved by processing order, not skip priority). |
@@ -324,11 +334,18 @@ than one, and only the last of them resolves the round:
 server -> *      : ROUND_START { question: { mode: 'proverb', index: 4, totalQuestions: 30, clue: "가는 말이 고와야", ... }, ... }
 
 player A -> server : SUBMIT_ANSWER { guess: "오는 말이 곱다" }
-server   -> A      : ANSWER_ACCEPTED { pointsAwarded: 1, place: 1 }   // round stays IN_ROUND
+server   -> A      : ANSWER_ACCEPTED { pointsAwarded: 1, place: 1 }   // private: points and verdict
+server   -> *      : ROUND_SCORER { nickname: "A", place: 1, ... }    // public: "1등 - A"
 player B -> server : SUBMIT_ANSWER { guess: "가는 말이 고와야 오는 말이 곱다" }
-server   -> B      : ANSWER_ACCEPTED { pointsAwarded: 1, place: 2 }   // still IN_ROUND
+server   -> B      : ANSWER_ACCEPTED { pointsAwarded: 1, place: 2 }
+server   -> *      : ROUND_SCORER { nickname: "B", place: 2, ... }    // still IN_ROUND
+
+// 30 s of the 60 s window left, and the third place is still open
+server   -> *      : ROUND_HINT { hint: "오는 말" }                    // once per round
+
 player C -> server : SUBMIT_ANSWER { guess: "오는말이곱다" }
 server   -> C      : ANSWER_ACCEPTED { pointsAwarded: 1, place: 3 }   // last place taken
+server   -> *      : ROUND_SCORER { nickname: "C", place: 3, ... }
 server   -> *      : ROUND_REVEAL { answer: { answer: "가는 말이 고와야 오는 말이 곱다", detail: "오는 말이 곱다", clue: "가는 말이 고와야", ... }, scorers: [A, B, C], ... }
 
 player D -> server : SUBMIT_ANSWER { guess: "오는 말이 곱다" }

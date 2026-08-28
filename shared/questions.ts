@@ -82,6 +82,12 @@ export type Question =
       full: string;
       /** What the saying means. Shown at the reveal, never before it. */
       explanation: string | null;
+      /**
+       * The curated core keyword shown as the halfway hint, or null when this
+       * record has none. Curated rather than derived: a word picked out of the
+       * answer automatically is a word that sometimes *is* the answer.
+       */
+      hint: string | null;
     })
   | (QuestionCommon & {
       mode: 'idiom';
@@ -193,6 +199,85 @@ export function toQuestionReveal(question: Question): QuestionRevealInfo {
 }
 
 // ---------------------------------------------------------------------------
+// The halfway hint
+// ---------------------------------------------------------------------------
+
+/**
+ * What a text round shows when it is half over and nobody has it yet.
+ *
+ * Deliberately not derived from the answer for proverbs — see `hint` on the
+ * proverb question — and deliberately *only* derived from it for idioms, where
+ * the initial consonants are a shape rather than a reading: `ㅇㅇㅈㅇ` narrows
+ * 우왕좌왕 down without spelling any of it.
+ *
+ * The example is deliberately an idiom that is *not* in this repository's
+ * bank. This file is mounted at `/shared/` for the reference client, so a
+ * real answer written into a comment here would be an answer the browser can
+ * fetch — see the served-files test in `server/http.test.ts`.
+ */
+
+/**
+ * Shown for a proverb somebody wrote themselves and gave no `hint`.
+ *
+ * A generic sentence rather than a word taken out of the saying: picking one
+ * automatically would hand over part of the answer on exactly the records
+ * nobody curated, and refusing to load the bank over a missing hint would cost
+ * a host their own questions for a field that did not exist when they wrote
+ * the file.
+ */
+export const PROVERB_HINT_FALLBACK = '이 문제에는 준비된 힌트가 없습니다. 앞부분을 다시 읽어 보세요!';
+
+/** Hangul syllables start here and run 588 apart, one block per initial. */
+const HANGUL_BASE = 0xac00;
+const HANGUL_LAST = 0xd7a3;
+const SYLLABLES_PER_INITIAL = 588;
+
+/** The 19 initial consonants, in Unicode order. */
+const CHOSEONG = [
+  'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ',
+  'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ',
+] as const;
+
+/**
+ * The initial consonant of every Hangul syllable in `text`.
+ *
+ * `우왕좌왕` → `ㅇㅇㅈㅇ`. Anything that is not a composed Hangul syllable —
+ * Hanja, a space, a jamo already on its own — is passed through unchanged,
+ * because dropping it would silently shorten a hint that is supposed to be one
+ * mark per character.
+ */
+export function hangulInitials(text: string): string {
+  let out = '';
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < HANGUL_BASE || code > HANGUL_LAST) {
+      out += character;
+      continue;
+    }
+    out += CHOSEONG[Math.floor((code - HANGUL_BASE) / SYLLABLES_PER_INITIAL)] ?? character;
+  }
+  return out;
+}
+
+/**
+ * The one function that decides what a hint may say, mirroring
+ * `toQuestionPublic`.
+ *
+ * Returns null for a song round, which has no hint: the clip is the clue and
+ * it has been playing since the first millisecond.
+ */
+export function toQuestionHint(question: Question): string | null {
+  switch (question.mode) {
+    case 'song':
+      return null;
+    case 'proverb':
+      return question.hint ?? PROVERB_HINT_FALLBACK;
+    case 'idiom':
+      return hangulInitials(question.answer);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Question banks
 // ---------------------------------------------------------------------------
 
@@ -206,6 +291,14 @@ export interface RawProverb {
   difficulty?: string;
   /** Shown at the reveal, never before it. */
   explanation?: string;
+  /**
+   * The core keyword shown once the round is half over.
+   *
+   * Optional because the field did not exist when hosts started writing their
+   * own `문제/속담.json`. A record without one still loads and plays; it gets
+   * `PROVERB_HINT_FALLBACK` instead of a word chosen out of its own answer.
+   */
+  hint?: string;
 }
 
 export interface RawIdiom {
@@ -347,6 +440,18 @@ export function buildProverbBank(records: readonly RawProverb[], options: BankOp
       throw new QuestionBankError(`속담 "${record.id}": prefix + suffix 가 full 과 같지 않습니다.`);
     }
 
+    // A hint is a nudge, not a second copy of the answer. Checked on normalized
+    // text for the same reason the clue is: spacing must not be able to hide a
+    // giveaway. A keyword that is *part* of the missing half is fine and is the
+    // point; one that contains the whole of it is not.
+    const hint = emptyToNull(record.hint);
+    if (hint !== null) {
+      const normalizedHint = normalizeAnswer(hint);
+      if (normalizedHint.includes(normalizeAnswer(suffix)) || normalizedHint.includes(normalizeAnswer(full))) {
+        throw new QuestionBankError(`속담 "${record.id}": 힌트에 정답이 그대로 들어 있습니다.`);
+      }
+    }
+
     questions.push({
       mode: 'proverb',
       id: record.id,
@@ -354,6 +459,7 @@ export function buildProverbBank(records: readonly RawProverb[], options: BankOp
       suffix,
       full,
       explanation: emptyToNull(record.explanation),
+      hint,
       aliases: normalizeAliasList([full, suffix, ...(record.aliases ?? [])]),
     });
   }

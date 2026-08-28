@@ -1070,10 +1070,13 @@ export default function Home() {
               <span>띄어쓰기·대소문자·특수문자는 자동으로 무시됩니다.</span>
             </div>
 
-            {/* No chat log. A wrong guess is private to its author, so there is
-                nowhere for one to be broadcast (integration-plan §1.3). */}
+            {/* Still no chat. A wrong guess is private to its author, so there
+                is nowhere for one to be broadcast (integration-plan §1.3).
+                What the room does share is what the server broadcast: the
+                halfway hint and each place as it is taken. */}
             <div className="chat-log">
               <Feedback state={state} textMode={textMode} />
+              <RoundFeed state={state} />
             </div>
 
             <form className="answer-form" onSubmit={onSubmitAnswer}>
@@ -1254,6 +1257,43 @@ function Feedback({ state, textMode }: { state: ClientState | null; textMode: bo
       <i>—</i>
       <p>이번 라운드에서는 더 이상 점수를 받을 수 없습니다.</p>
     </div>
+  );
+}
+
+/**
+ * What the whole room sees: the halfway hint, then each place as it is taken.
+ *
+ * Every entry arrived as a `ROUND_HINT` or `ROUND_SCORER` broadcast. Nothing is
+ * computed here — §1.5 forbids deriving a hint from an answer this client does
+ * not have, and the places are numbered by the server, which is the only party
+ * that knows what order the answers landed in.
+ *
+ * Read straight off `state.round`, so the next `ROUND_START` empties it and a
+ * reconnect snapshot refills it with whatever was already public. Nicknames go
+ * through JSX as text, which React escapes.
+ */
+function RoundFeed({ state }: { state: ClientState | null }) {
+  const round = state?.round;
+  if (round === undefined || round === null) return null;
+  if (round.hint === null && round.scorers.length === 0) return null;
+
+  return (
+    <ul className="round-feed" aria-live="polite" aria-label="라운드 알림">
+      {round.hint !== null && (
+        <li className="feed-hint">
+          <b>힌트</b>
+          <span>{round.hint}</span>
+        </li>
+      )}
+      {/* One expression per line rather than three, so each entry is a single
+          text node and "1등 - 닉네임" survives server rendering intact — React
+          separates adjacent expressions with comment markers. */}
+      {round.scorers.map((scorer) => (
+        <li className="feed-scorer" key={scorer.place}>
+          {`${scorer.place}등 - ${scorer.nickname}`}
+        </li>
+      ))}
+    </ul>
   );
 }
 

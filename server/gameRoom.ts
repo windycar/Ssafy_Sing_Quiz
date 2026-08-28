@@ -25,7 +25,7 @@
 import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
 import { toRoundPublicPayload } from '../shared/songCatalog.ts';
 import { createAliasMatcher } from '../shared/answerMatching.ts';
-import { toQuestionPublic, toQuestionReveal, SECTION_ORDER } from '../shared/questions.ts';
+import { isTextMode, toQuestionHint, toQuestionPublic, toQuestionReveal, SECTION_ORDER } from '../shared/questions.ts';
 import type { GameMode, Question } from '../shared/questions.ts';
 import type { AliasMatcher } from '../shared/answerMatching.ts';
 import type {
@@ -60,8 +60,22 @@ export const REVEAL_MS = 4_000;
  * has to finish before anyone can be expected to know it. A text round has no
  * such floor — the clue is on screen from the first millisecond — so the length
  * is a flat one chosen for reading and typing a Korean phrase on a phone.
+ *
+ * A minute rather than the thirty seconds this used to be. Three places are
+ * open for a whole minute now, and the round has a hint in the middle of it:
+ * half the window is the room racing on what it knows, and half is the room
+ * racing on the hint. Thirty seconds left no room for the second half.
  */
-export const TEXT_ROUND_MS = 30_000;
+export const TEXT_ROUND_MS = 60_000;
+/**
+ * How much of a text round is left when the hint goes out.
+ *
+ * Halfway, and expressed as time *remaining* rather than time elapsed because
+ * that is the promise being made: a player watching the clock gets the hint
+ * with thirty seconds still on it. Pause and resume move the moment along with
+ * the deadline — see `resumeRound` — so the promise survives a break.
+ */
+export const TEXT_HINT_REMAINING_MS = 30_000;
 /**
  * How long a round stays frozen waiting for a host who dropped out.
  *
@@ -158,16 +172,31 @@ interface Round {
   scorers: PlayerId[];
   resolved: boolean;
   guessCounts: Map<PlayerId, number>;
+  /**
+   * When the halfway hint is due, or null once it has gone out — and null from
+   * the start in a song round, which has no hint.
+   *
+   * Absolute, and moved by `resumeRound` exactly as the deadline is. Cleared
+   * rather than flagged separately so that "is a hint still coming" is one
+   * question with one answer, and a hint cannot be sent twice.
+   */
+  hintAt: number | null;
+  /**
+   * The hint, once it is public. Null before that, which is what keeps it out
+   * of a reconnect snapshot taken early in the round.
+   */
+  hint: string | null;
 }
 
 /**
  * What the pending timer is for.
  *
- * `HOST_GRACE` is the odd one out: the other three end a phase, while this one
- * only decides how long the room waits for an absent host before it stops
- * waiting. See `resolveHostAbsence`.
+ * `COUNTDOWN`, `DEADLINE` and `REVEAL` end a phase. The other two do not:
+ * `HOST_GRACE` decides how long the room waits for an absent host before it
+ * stops waiting (`resolveHostAbsence`), and `HINT` fires in the middle of a
+ * round that then keeps running (`armRoundTimer`).
  */
-type TimerKind = 'COUNTDOWN' | 'DEADLINE' | 'REVEAL' | 'HOST_GRACE';
+type TimerKind = 'COUNTDOWN' | 'DEADLINE' | 'REVEAL' | 'HOST_GRACE' | 'HINT';
 
 export interface CreateRoomOptions {
   roomId?: RoomId;
@@ -352,9 +381,27 @@ export class GameRoom {
     }
   }
 
-  /** Drives every server-owned timer. Safe to call more often than needed. */
+  /**
+   * Drives every server-owned timer. Safe to call more often than needed.
+   *
+   * Drains every appointment already due rather than one per call. A text round
+   * has two — the hint, and then the deadline behind it — so a caller arriving
+   * late, or one that only ticks at the moments it cares about, would otherwise
+   * collect the hint and leave the round running past its own end. Draining
+   * terminates because each fired timer either arms one strictly later than the
+   * moment that fired it or arms none at all; the bound is belt and braces.
+   */
   tick(now: number): Effect[] {
-    if (this.timerAt === null || now < this.timerAt) return [];
+    const effects: Effect[] = [];
+    for (let guard = 0; guard < 8; guard += 1) {
+      if (this.timerAt === null || now < this.timerAt) break;
+      effects.push(...this.fireTimer(now));
+    }
+    return effects;
+  }
+
+  /** One due appointment. See `tick`, which is the only caller. */
+  private fireTimer(now: number): Effect[] {
     const kind = this.timerKind;
     this.clearTimer();
 
@@ -367,6 +414,8 @@ export class GameRoom {
         return this.advanceAfterReveal(now);
       case 'HOST_GRACE':
         return this.resolveHostAbsence(now);
+      case 'HINT':
+        return this.emitHint();
       default:
         return [];
     }
@@ -656,12 +705,64 @@ export class GameRoom {
 
     // The only place round time is ever adjusted. Pause/resume therefore
     // suspends the answer window without lengthening or shortening it.
-    round.deadline += now - round.pausedAt;
+    //
+    // The hint moves by the same amount, so a pause neither brings it forward
+    // nor skips it: it is due with `TEXT_HINT_REMAINING_MS` of answering time
+    // left, and a break does not spend answering time. A hint already sent has
+    // `hintAt` of null and nothing to move.
+    const pausedFor = now - round.pausedAt;
+    round.deadline += pausedFor;
+    if (round.hintAt !== null) round.hintAt += pausedFor;
     round.paused = false;
     round.pausedAt = null;
     this.autoPaused = false;
-    this.setTimer(round.deadline, 'DEADLINE');
+    this.armRoundTimer();
     return [{ kind: 'broadcast', message: { type: 'ROUND_RESUMED', newDeadline: round.deadline } }];
+  }
+
+  /**
+   * Arms whichever of the round's two moments comes first.
+   *
+   * The engine holds one timer, and a text round has two things to wake up
+   * for: the hint and the deadline. Rather than a second timer field — which
+   * would need pausing, clearing and reasoning about everywhere the first one
+   * is — the hint is armed first and `emitHint` arms the deadline behind it.
+   *
+   * Called on every path that starts or restarts the clock, so there is one
+   * answer to "what is the round waiting for" instead of one per caller.
+   */
+  private armRoundTimer(): void {
+    const round = this.round;
+    if (round === null || round.paused || round.resolved) return;
+    if (round.hintAt !== null && round.hintAt < round.deadline) {
+      this.setTimer(round.hintAt, 'HINT');
+      return;
+    }
+    this.setTimer(round.deadline, 'DEADLINE');
+  }
+
+  /**
+   * Half the answer window is gone. Say the one safe thing about the answer.
+   *
+   * Broadcast, because a hint everybody does not get is not a hint — it is an
+   * advantage. What it may contain is decided by `toQuestionHint` and nowhere
+   * else, for the same reason `toQuestionPublic` is the only redactor of a
+   * round payload: one place to audit.
+   *
+   * `hintAt` is cleared before anything is sent, so this cannot fire twice
+   * however the timers are driven.
+   */
+  private emitHint(): Effect[] {
+    const round = this.round;
+    if (round === null || round.resolved || round.hintAt === null) return [];
+    round.hintAt = null;
+
+    const hint = toQuestionHint(round.question);
+    this.armRoundTimer();
+    if (hint === null) return [];
+
+    round.hint = hint;
+    return [{ kind: 'broadcast', message: { type: 'ROUND_HINT', hint } }];
   }
 
   /**
@@ -797,20 +898,44 @@ export class GameRoom {
     player.score += points;
     if (place === 1) player.roundsWon += 1;
 
-    // Only the scorer hears about it: the boards stay still until REVEAL, so a
-    // player still guessing learns nothing from watching them.
+    // Only the scorer hears the points and the verdict on their own guess: the
+    // boards stay still until REVEAL, so a player still guessing learns nothing
+    // from watching them.
     const accepted: Effect = {
       kind: 'send',
       to: player.id,
       message: { type: 'ANSWER_ACCEPTED', pointsAwarded: points, place },
     };
+    const effects: Effect[] = [accepted];
+
+    // The room hears the place, and only in a text mode. Three places open for
+    // a full minute are a race, and a race nobody can see the standings of is
+    // just a wait — so "1등 - 닉네임" goes out as it happens. It says that
+    // somebody was right, never what they typed, so a player still guessing
+    // learns no more than they would from watching the room cheer.
+    //
+    // Song rounds are excluded on purpose rather than by accident of having one
+    // place: their first correct answer ends the round, and `ROUND_REVEAL` with
+    // its winner follows in the same batch.
+    if (isTextMode(round.question.mode)) {
+      effects.push({
+        kind: 'broadcast',
+        message: {
+          type: 'ROUND_SCORER',
+          playerId: player.id,
+          nickname: player.nickname,
+          place,
+          pointsAwarded: points,
+        },
+      });
+    }
 
     // The round stays open until the last scoring place is taken, so second
     // and third are still worth racing for where the mode has them. Taking the
     // last one closes it — and that player is still owed their own
-    // acknowledgment, which is why it is prepended rather than dropped.
-    if (round.scorers.length < table.length) return [accepted];
-    return [accepted, ...this.resolveRound(now)];
+    // acknowledgment, which is why it comes first rather than being dropped.
+    if (round.scorers.length < table.length) return effects;
+    return [...effects, ...this.resolveRound(now)];
   }
 
   /**
@@ -829,6 +954,11 @@ export class GameRoom {
     // Drops any armed host-absence timer with it: the round it was waiting on
     // is over, so there is nothing left to resume or abandon.
     this.autoPaused = false;
+    // A skip, a third scorer, or a host ending the section can all land before
+    // the hint is due. Dropping the appointment matters as much as dropping the
+    // timer: `armRoundTimer` is called from resume paths, and a round that is
+    // over must not be able to arm anything.
+    round.hintAt = null;
     this.phase = 'REVEAL';
 
     const effects: Effect[] = [];
@@ -922,8 +1052,13 @@ export class GameRoom {
       scorers: [],
       resolved: false,
       guessCounts: new Map(),
+      // Song rounds get no hint, so they get no moment to send one at. Written
+      // from the deadline rather than from `now` so that the hint is defined by
+      // the time left, which is what a player sees.
+      hintAt: isTextMode(question.mode) ? deadline - TEXT_HINT_REMAINING_MS : null,
+      hint: null,
     };
-    this.setTimer(deadline, 'DEADLINE');
+    this.armRoundTimer();
 
     // Built by the two functions allowed to decide what leaves the server
     // before REVEAL. Between them they cannot emit a title, an artist, the
@@ -1007,6 +1142,12 @@ export class GameRoom {
     round: Round,
   ): Omit<RoundPublicState, 'serverStartedAt' | 'deadline' | 'paused' | 'pausedAt' | 'hostAway' | 'hostGraceEndsAt'> {
     const question = toQuestionPublic(round.question, round.index, this.questions.length, round.durationMs);
+    // Already public, both of them: the hint is whatever `ROUND_HINT` sent and
+    // stays null until it did, and the scorers are the places already called
+    // out. A client that was here all along has exactly this; one that just
+    // arrived should not have less, or more.
+    const hint = round.hint;
+    const scorers = this.publicScorers(round);
 
     if (round.question.mode === 'song') {
       const payload = toRoundPublicPayload(round.question.song, round.index, this.questions.length);
@@ -1017,6 +1158,8 @@ export class GameRoom {
         clipStartMs: payload.clipStartMs,
         clipEndMs: payload.clipEndMs,
         livePlayback: payload.livePlayback,
+        hint,
+        scorers,
       };
     }
 
@@ -1030,7 +1173,35 @@ export class GameRoom {
       clipStartMs: 0,
       clipEndMs: 0,
       livePlayback: false,
+      hint,
+      scorers,
     };
+  }
+
+  /**
+   * The places already called out this round, for a snapshot to restore.
+   *
+   * Empty in a song round, which calls out nothing before the reveal — the
+   * same rule `handleSubmitAnswer` applies when it decides whether to broadcast
+   * `ROUND_SCORER`, and stated in both places rather than inferred from an
+   * empty list, because a song round *does* have a scorer; it just is not
+   * public yet.
+   */
+  private publicScorers(round: Round): RoundScorer[] {
+    if (!isTextMode(round.question.mode)) return [];
+    const table = POINTS_BY_PLACE[round.question.mode];
+    const scorers: RoundScorer[] = [];
+    for (const [index, playerId] of round.scorers.entries()) {
+      const player = this.players.get(playerId);
+      if (player === undefined) continue;
+      scorers.push({
+        playerId: player.id,
+        nickname: player.nickname,
+        place: index + 1,
+        pointsAwarded: table[index] ?? 0,
+      });
+    }
+    return scorers;
   }
 
   private buildRoomState(player: Player, now: number): ServerMessage {

@@ -42,16 +42,16 @@ const proverbStart: ServerMessage = {
     mode: 'proverb',
     index: 4,
     totalQuestions: 30,
-    durationMs: 30_000,
+    durationMs: 60_000,
     clue: '가는 말이 고와야',
   },
-  song: { index: 4, totalSongs: 30, clipDurationMs: 30_000 },
+  song: { index: 4, totalSongs: 30, clipDurationMs: 60_000 },
   mediaUrl: '',
   clipStartMs: 0,
   clipEndMs: 0,
   livePlayback: false,
   serverStartedAt: 1_000,
-  deadline: 31_000,
+  deadline: 61_000,
 };
 
 function player(id: string, overrides: Partial<PlayerSummary> = {}): PlayerSummary {
@@ -85,7 +85,7 @@ test('a text ROUND_START carries the clue, the progress, and nothing else', () =
   assert.equal(state.totalQuestions, 30);
   assert.equal(state.round?.question.clue, '가는 말이 고와야');
   assert.equal(state.round?.question.index, 4, 'the client renders 5 / 30 from this');
-  assert.equal(state.round?.deadline, 31_000);
+  assert.equal(state.round?.deadline, 61_000, 'a text round is a minute');
 
   // No media to play, in either of the two ways a client might try.
   assert.equal(state.round?.mediaUrl, '');
@@ -336,6 +336,8 @@ test('a ROOM_STATE snapshot restores a round already in progress', () => {
         hostAway: false,
         hostGraceEndsAt: null,
         livePlayback: false,
+        hint: null,
+        scorers: [],
       },
     },
   ]);
@@ -810,4 +812,140 @@ test('a refreshed player keeps their score', async () => {
   } finally {
     await running.stop();
   }
+});
+
+// --- The halfway hint and the live scorer feed -------------------------------
+
+test('a round starts with no hint and nobody on the board', () => {
+  const state = reduce([proverbStart]);
+  assert.equal(state.round?.hint, null);
+  assert.deepEqual(state.round?.scorers, []);
+});
+
+test('ROUND_HINT is stored as sent, and never derived from anything', () => {
+  const state = reduce([proverbStart, { type: 'ROUND_HINT', hint: 'ㅇㅅㅇㅈ' }]);
+  assert.equal(state.round?.hint, 'ㅇㅅㅇㅈ');
+  // It changes nothing else: the deadline, the phase and this player's own
+  // feedback are all where they were.
+  assert.equal(state.phase, 'IN_ROUND');
+  assert.deepEqual(state.answerFeedback, { kind: 'none' });
+});
+
+test('a hint with no round to belong to is dropped', () => {
+  // It would otherwise be shown against whichever round started next.
+  const state = reduce([{ type: 'ROUND_HINT', hint: 'ㄱㄴㄷㄹ' }]);
+  assert.equal(state.round, null);
+});
+
+test('scorers accumulate in the order the server announced them', () => {
+  const state = reduce([
+    proverbStart,
+    { type: 'ROUND_SCORER', playerId: 'p1', nickname: '가', place: 1, pointsAwarded: 1 },
+    { type: 'ROUND_SCORER', playerId: 'p2', nickname: '나', place: 2, pointsAwarded: 1 },
+    { type: 'ROUND_SCORER', playerId: 'p3', nickname: '다', place: 3, pointsAwarded: 1 },
+  ]);
+
+  assert.deepEqual(
+    state.round?.scorers.map((scorer) => `${scorer.place}등 - ${scorer.nickname}`),
+    ['1등 - 가', '2등 - 나', '3등 - 다'],
+  );
+});
+
+test('the same place announced twice is only counted once', () => {
+  // A snapshot landing beside the live message must not print somebody twice.
+  const state = reduce([
+    proverbStart,
+    { type: 'ROUND_SCORER', playerId: 'p1', nickname: '가', place: 1, pointsAwarded: 1 },
+    { type: 'ROUND_SCORER', playerId: 'p1', nickname: '가', place: 1, pointsAwarded: 1 },
+  ]);
+  assert.equal(state.round?.scorers.length, 1);
+});
+
+test('the next round clears the hint and the scorers', () => {
+  const state = reduce([
+    proverbStart,
+    { type: 'ROUND_HINT', hint: 'ㅇㅅㅇㅈ' },
+    { type: 'ROUND_SCORER', playerId: 'p1', nickname: '가', place: 1, pointsAwarded: 1 },
+    { type: 'COUNTDOWN_STARTED', startsAt: 90_000 },
+    proverbStart,
+  ]);
+  assert.equal(state.round?.hint, null, 'last round’s hint must not sit over this one');
+  assert.deepEqual(state.round?.scorers, []);
+});
+
+test('a snapshot restores the hint and scorers that were already public', () => {
+  const restored = reduce([
+    {
+      type: 'ROOM_STATE',
+      phase: 'IN_ROUND',
+      mode: 'proverb',
+      sections: [{ mode: 'proverb', count: 3 }],
+      totalQuestions: 3,
+      players: [player('p1')],
+      isHost: false,
+      playerToken: 'token',
+      playerId: 'p1',
+      leaderboard: [],
+      answeredThisRound: false,
+      round: {
+        question: { mode: 'proverb', index: 0, totalQuestions: 3, durationMs: 60_000, clue: '티끌 모아' },
+        song: { index: 0, totalSongs: 3, clipDurationMs: 60_000 },
+        mediaUrl: '',
+        clipStartMs: 0,
+        clipEndMs: 0,
+        serverStartedAt: 1_000,
+        deadline: 61_000,
+        paused: false,
+        pausedAt: null,
+        hostAway: false,
+        hostGraceEndsAt: null,
+        livePlayback: false,
+        hint: '아주 큰 산',
+        scorers: [{ playerId: 'p2', nickname: '나', place: 1, pointsAwarded: 1 }],
+      },
+    },
+  ]);
+
+  assert.equal(restored.round?.hint, '아주 큰 산');
+  assert.deepEqual(
+    restored.round?.scorers.map((scorer) => `${scorer.place}등 - ${scorer.nickname}`),
+    ['1등 - 나'],
+  );
+});
+
+test('a snapshot taken before the hint restores no hint', () => {
+  const early = reduce([
+    {
+      type: 'ROOM_STATE',
+      phase: 'IN_ROUND',
+      mode: 'idiom',
+      sections: [{ mode: 'idiom', count: 1 }],
+      totalQuestions: 1,
+      players: [player('p1')],
+      isHost: false,
+      playerToken: 'token',
+      playerId: 'p1',
+      leaderboard: [],
+      answeredThisRound: false,
+      round: {
+        question: { mode: 'idiom', index: 0, totalQuestions: 1, durationMs: 60_000, clue: '한 번에 둘' },
+        song: { index: 0, totalSongs: 1, clipDurationMs: 60_000 },
+        mediaUrl: '',
+        clipStartMs: 0,
+        clipEndMs: 0,
+        serverStartedAt: 1_000,
+        deadline: 61_000,
+        paused: false,
+        pausedAt: null,
+        hostAway: false,
+        hostGraceEndsAt: null,
+        livePlayback: false,
+        hint: null,
+        scorers: [],
+      },
+    },
+  ]);
+
+  assert.equal(early.round?.hint, null, 'a reconnect must not buy an early hint');
+  assert.deepEqual(early.round?.scorers, []);
 });

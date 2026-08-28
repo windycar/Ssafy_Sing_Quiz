@@ -17,12 +17,15 @@ import assert from 'node:assert/strict';
 import {
   buildIdiomBank,
   buildProverbBank,
+  hangulInitials,
   isGameMode,
   isTextMode,
   songQuestions,
+  toQuestionHint,
   toQuestionPublic,
   toQuestionReveal,
   GAME_MODES,
+  PROVERB_HINT_FALLBACK,
   MODE_LABEL,
   QUESTIONS_PER_TEXT_GAME,
   TEXT_BANK_SIZE,
@@ -306,4 +309,105 @@ test('toQuestionReveal says everything, and only at the reveal', () => {
     hanja: '苦盡甘來',
     explanation: null,
   });
+});
+
+// --- The halfway hint -------------------------------------------------------
+
+test('hangulInitials reduces a four-syllable idiom to its four initials', () => {
+  assert.equal(hangulInitials('일석이조'), 'ㅇㅅㅇㅈ');
+  assert.equal(hangulInitials('고진감래'), 'ㄱㅈㄱㄹ');
+  // Every initial in the table, including the tense ones, which sit at
+  // different offsets in the syllable block.
+  assert.equal(hangulInitials('까따빠싸'), 'ㄲㄸㅃㅆ');
+  // One mark per character, so the count of a hint always matches the count of
+  // the answer. Anything that is not a composed syllable is passed through.
+  assert.equal(hangulInitials('苦盡甘來'), '苦盡甘來');
+  assert.equal(hangulInitials('가 나'), 'ㄱ ㄴ');
+  assert.equal(hangulInitials(''), '');
+});
+
+test('an idiom hint is its initials, and never a syllable of the answer', () => {
+  const idiom = buildIdiomBank(idioms([{ answer: '일석이조', hanja: '一石二鳥', meaning: '한 번에 둘' }]))[0];
+  assert.ok(idiom !== undefined);
+
+  const hint = toQuestionHint(idiom);
+  assert.equal(hint, 'ㅇㅅㅇㅈ');
+  // The point of initials: same length, no reading. Neither script survives.
+  assert.equal(hint?.length, 4);
+  for (const alias of idiom.aliases) {
+    assert.equal(hint?.includes(alias), false, `the hint spelled out "${alias}"`);
+  }
+});
+
+test('a proverb hint is the curated keyword, and a bank that hides the answer in one is refused', () => {
+  const bank = buildProverbBank(
+    proverbs([{ id: 'p0', full: '티끌 모아 태산', prefix: '티끌 모아', suffix: '태산', hint: '아주 큰 산' }]),
+  );
+  const curated = bank[0];
+  assert.ok(curated !== undefined);
+  assert.equal(toQuestionHint(curated), '아주 큰 산');
+
+  // A "hint" that contains the missing half is the answer with extra words
+  // around it. Refused at construction, where a curation mistake is cheap.
+  assert.throws(
+    () =>
+      buildProverbBank(
+        proverbs([{ id: 'p0', full: '티끌 모아 태산', prefix: '티끌 모아', suffix: '태산', hint: '정답은 태산' }]),
+      ),
+    QuestionBankError,
+  );
+  // Spacing cannot smuggle it past, for the same reason it cannot in a clue.
+  assert.throws(
+    () =>
+      buildProverbBank(
+        proverbs([
+          { id: 'p0', full: '가는 말이 곱다', prefix: '가는', suffix: '말이 곱다', hint: '말 이 곱 다 입니다' },
+        ]),
+      ),
+    QuestionBankError,
+  );
+});
+
+test('a proverb written before hints existed still loads, and gets only the safe fallback', () => {
+  // The compatibility case: somebody's own 문제/속담.json, written when the
+  // field did not exist. The bank must build, and the hint must be a sentence
+  // about there being no hint — never a word lifted out of the answer.
+  const bank = buildProverbBank(proverbs(), { expectedSize: TEXT_BANK_SIZE });
+  const question = bank[0];
+  assert.ok(question !== undefined && question.mode === 'proverb');
+  assert.equal(question.hint, null);
+
+  const hint = toQuestionHint(question);
+  assert.equal(hint, PROVERB_HINT_FALLBACK);
+  for (const alias of question.aliases) {
+    assert.equal(hint?.includes(alias), false, `the fallback leaked "${alias}"`);
+  }
+  assert.equal(hint?.includes(question.suffix), false);
+});
+
+test('an empty hint is the same as no hint at all', () => {
+  const bank = buildProverbBank(proverbs([{ id: 'p0', hint: '   ' }]));
+  const question = bank[0];
+  assert.ok(question !== undefined && question.mode === 'proverb');
+  assert.equal(question.hint, null, 'whitespace is not a hint');
+  assert.equal(toQuestionHint(question), PROVERB_HINT_FALLBACK);
+});
+
+test('a song round has no hint', () => {
+  // The clip has been the clue since the first millisecond; there is nothing
+  // to reveal halfway that would not be the title.
+  const song = songQuestions([
+    {
+      id: 's1',
+      artist: '가수',
+      title: '제목',
+      aliases: ['제목'],
+      mediaUrl: 'https://media.invalid/a',
+      youtubeId: null,
+      clipStartMs: 0,
+      clipEndMs: 10_000,
+    },
+  ])[0];
+  assert.ok(song !== undefined);
+  assert.equal(toQuestionHint(song), null);
 });

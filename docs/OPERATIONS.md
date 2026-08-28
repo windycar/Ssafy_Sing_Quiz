@@ -1,10 +1,8 @@
 # 운영 가이드
 
-현재 배포된 프로토타입을 점검하는 방법과, `realtime-protocol.md` /
-`claude-analysis.md`에서 정의한 권위 서버를 실제로 운영할 때 반드시 지켜야
-할 원칙을 정리합니다. **이 문서의 상당 부분은 아직 존재하지 않는 서버를
-대상으로 한 설계 원칙입니다.** 현재 상태와 향후 원칙을 절과 표로 구분해
-둡니다.
+현재 Sites 배포본을 점검하는 방법과, 구현된 권위 서버를 실제로 운영할 때
+반드시 지켜야 할 원칙을 정리합니다. 현재 상태와 아직 운영 환경에서 해결해야
+할 제약을 절과 표로 구분합니다.
 
 ## 1. 현재 배포 개념
 
@@ -56,8 +54,7 @@ Invoke-WebRequest -Uri "https://drop-the-beat-quiz.jyc686397.chatgpt.site" -Meth
 ### 게임 서버 실행 (로컬)
 
 ```powershell
-cd .worktrees\claude\server
-npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json --origin http://localhost:8787
+node server\main.ts --songs data\songs.recovered.json --demo-clips
 ```
 
 서버 하나가 HTTP API, WebSocket, 그리고 참조 웹 클라이언트를 모두 제공합니다.
@@ -134,17 +131,18 @@ node scripts\host.ts --playlist playlist.txt --songs data\songs.recovered.json
 
 ## 2. 환경변수와 시크릿
 
-- 현재 프로토타입은 필수 환경변수가 없습니다(D1/R2 바인딩이 비어 있고,
-  외부 API 키를 쓰지 않습니다).
+- 로컬에서 서버가 참조 클라이언트를 같은 출처로 제공할 때는 필수 환경변수가
+  없습니다. React UI를 별도 주소에 배포할 때는 `VITE_GAME_SERVER`가 필요합니다.
+  D1/R2 바인딩은 비어 있고 외부 API 키는 쓰지 않습니다.
 - 앞으로 미디어 URL 서명, 세션 토큰 서명 키 등을 추가할 때는 `.env`에만
   두고 저장소에는 값이 빈 `.env.example`만 커밋합니다.
 - 방장 토큰(`HostToken`)과 참가자 세션 토큰(`PlayerToken`)은
   `claude-analysis.md` §5, §7에 따라 서버에서만 생성·검증하는 비밀값입니다.
   클라이언트 코드나 로그에 원문을 남기지 않습니다.
 
-## 3. 헬스체크 · 로그 · 모니터링 (향후 서버 구현 시 원칙)
+## 3. 헬스체크 · 로그 · 모니터링
 
-권위 서버가 구현되면 다음을 최소 기준으로 둡니다.
+구현된 권위 서버를 운영 환경에 올릴 때 다음을 최소 기준으로 둡니다.
 
 - **헬스체크**: 프로세스 생존 여부와 별개로, 활성 방 수·연결 소켓 수를
   노출하는 엔드포인트를 두어 "떠 있지만 방 상태가 깨진" 경우를 구분합니다.
@@ -273,7 +271,8 @@ node scripts\host.ts --playlist playlist.txt --songs data\songs.recovered.json
   이 경로를 쓰지 않으면 재배포가 무기한 대기합니다.
 
 테스트는 321개(`shared` 84, `server` 192, `client` 45)이며 모두 통과합니다.
-`music-quiz/`는 빌드가 필요해 별도로 7개를 돌립니다.
+`music-quiz/`는 빌드가 필요해 별도로 7개를 돌립니다. 실행 스크립트 테스트 2개도
+별도로 통과해야 합니다.
 
 ### 남은 항목
 
@@ -297,6 +296,6 @@ node scripts\host.ts --playlist playlist.txt --songs data\songs.recovered.json
 
 - [`claude-analysis.md`](./claude-analysis.md) — 보안·재접속·동시성 설계 근거
 - [`realtime-protocol.md`](./realtime-protocol.md) — 메시지/에러 규격
-- [`integration-plan.md`](./integration-plan.md) — 서버 구현 전 반드시 정리해야 할 충돌 목록
+- [`integration-plan.md`](./integration-plan.md) — 완료된 브랜치 통합 판단과 충돌 기록
 - [`DEVELOPMENT.md`](./DEVELOPMENT.md) — 로컬 실행, 브랜치/통합 절차
-- [`USER_GUIDE.md`](./USER_GUIDE.md) — 현재 배포된 프로토타입의 사용자 관점 한계
+- [`USER_GUIDE.md`](./USER_GUIDE.md) — 완성형 게임 사용법과 현재 Sites 배포본의 한계

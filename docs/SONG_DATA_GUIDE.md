@@ -6,8 +6,8 @@
 ## 1. 복구된 SCX 카탈로그 현황
 
 곡 목록의 출발점은 스타크래프트 맵 파일(`.scx`)에서 복구한 텍스트입니다. 복구 과정과
-제약은 `docs/scx-recovery.md`(`agent/codex` 브랜치)에 기록되어 있고, 결과물은
-`data/songs.recovered.json`(`agent/codex` 브랜치)에 있습니다.
+제약은 `docs/scx-recovery.md`에 기록되어 있고, 결과물은
+`data/songs.recovered.json`에 있습니다.
 
 | 항목 | 값 |
 | --- | --- |
@@ -229,14 +229,14 @@ python tools/extract-scx-song-text.py scenario.chk data/songs.recovered.json
 **목록 전체 확인**
 
 - [ ] `buildSongCatalog` 결과의 `issues`가 비어 있는가
-- [ ] 남은 `playable` 곡 수가 한 판을 돌리기에 충분한가 (설정 최대 40곡)
+- [ ] 남은 `playable` 곡 수가 한 판을 돌리기에 충분한가 (기본 설정 최대 100곡)
 - [ ] `DUPLICATE_ALIAS`로 빠진 곡이 있다면 의도한 결과인가
 - [ ] 음원 주소가 곡명을 그대로 드러내지 않는가 — 파일명이나 페이지 제목으로 정답이
       새는 문제는 [`claude-analysis.md`](./claude-analysis.md) §7에 정리되어 있습니다.
 
 ## 8. 관련 문서
 
-- `docs/scx-recovery.md`(`agent/codex` 브랜치) — 복구 과정 기록
+- `docs/scx-recovery.md` — 복구 과정 기록
 - [`realtime-protocol.md`](./realtime-protocol.md) — 서버가 쓰는 `SongConfig` 규격
 - [`claude-analysis.md`](./claude-analysis.md) — 정답 판정과 보안 설계 근거
 - [`integration-plan.md`](./integration-plan.md) — 이 데이터를 서버에 연결하는 순서

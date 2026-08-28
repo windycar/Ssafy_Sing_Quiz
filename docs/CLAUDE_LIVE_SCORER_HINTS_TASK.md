@@ -1,5 +1,8 @@
 # Claude implementation task: live scorer feed and timed text hints
 
+> **완료됨.** 구현 커밋 `2784fc9`와 후속 안내 커밋 `80e5918`은 `main`에
+> 통합됐습니다. 아래 내용은 구현 요구사항과 검토 기준을 보존한 기록입니다.
+
 ## Objective
 
 Implement the following behavior for the **proverb** and **four-character idiom**

@@ -1,5 +1,9 @@
 # Integration plan — `agent/codex` prototype × `agent/claude` protocol
 
+> **완료된 이력 문서입니다.** 두 브랜치와 React 프로토콜 포팅은 모두 `main`에
+> 통합됐습니다. 아래의 "awaits review"·병합 순서는 당시 결정을 보존하기 위한
+> 기록이며 현재 작업 상태가 아닙니다.
+
 Companion to [`claude-analysis.md`](./claude-analysis.md) and
 [`realtime-protocol.md`](./realtime-protocol.md). This document is the
 integration contract between the two agent branches. It states what each

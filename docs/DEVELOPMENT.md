@@ -1,6 +1,6 @@
 # 개발 가이드
 
-이 저장소에서 개발 환경을 준비하고, 프로토타입을 실행·검증하고, 두 에이전트
+이 저장소에서 개발 환경을 준비하고, 완성형 게임을 실행·검증하고, 두 에이전트
 브랜치(`agent/claude`, `agent/codex`)를 오가며 작업을 주고받는 방법을
 정리합니다. 대상 독자는 이 프로젝트를 로컬에서 실행하거나, Claude/Codex의
 작업을 이어받아 통합하는 사람입니다.
@@ -18,10 +18,10 @@
 설치 실패가 발생할 수 있습니다. Node.js는 공식 Windows 인스톨러 또는
 `nvm-windows`로 설치하세요.
 
-## 2. 프로토타입 실행 명령
+## 2. 실행 및 검증 명령
 
-`music-quiz/`는 이제 이 브랜치에도 있고, 프로토타입이 아니라 **권위 서버에
-붙는 React 클라이언트**입니다. 아래 명령은 실제 `music-quiz/package.json`에
+`music-quiz/`는 `main`에 통합된 **권위 서버 연결 React 클라이언트**입니다. 아래
+명령은 실제 `music-quiz/package.json`에
 정의된 스크립트만 사용합니다 — 이 목록에 없는 명령은 존재하지 않습니다.
 
 ```powershell
@@ -66,7 +66,7 @@ npm.cmd run dev
 어차피 접속할 주소입니다) 방장 토큰과는 무관합니다. 게임 서버를 다른 출처에서
 띄웠다면 그 서버에 `--origin`으로 UI 주소를 허용해 주어야 합니다.
 
-공용 로직(`shared/`)은 이 브랜치(`agent/claude`)에 있고 별도 테스트 스크립트를
+공용 로직(`shared/`)은 저장소 루트에 있고 별도 테스트 스크립트를
 가집니다.
 
 ```powershell
@@ -80,7 +80,7 @@ npm.cmd test   # node --test *.test.ts — answerMatching, songCatalog, question
 ```powershell
 cd server
 npm.cmd test    # node --test *.test.ts — 엔진 단위 테스트 + 실제 소켓 종단 테스트 + HTTP API 테스트
-npm.cmd start -- --songs ..\..\codex\data\songs.recovered.json
+npm.cmd start -- --songs ..\data\songs.recovered.json
 ```
 
 출력된 주소(<http://localhost:8787>)를 브라우저로 열면 방 만들기부터 진행할 수
@@ -269,21 +269,21 @@ git merge main
 - 배포 관련 자격 증명·플랫폼 설정은 Codex가 로컬에서 다루고, Claude에게는
   필요한 경우 정제된 요약만 전달합니다(`AGENTS.md` 기준).
 
-## 7. 남은 통합 작업
+## 7. 통합 상태
 
-이 브랜치에는 서버와 클라이언트가 모두 있고, 둘은 이미 연결되어 동작합니다.
-남은 것은 `agent/codex`의 Next.js 프로토타입(`music-quiz/`)을 어떻게 할지
-결정하는 일입니다. 전체 순서와 근거는
-[`integration-plan.md`](./integration-plan.md) §3에 있습니다.
+서버, 참조 클라이언트, React 클라이언트와 두 에이전트 브랜치는 모두 `main`에
+통합됐습니다. 당시 순서와 근거는 이력 문서인
+[`integration-plan.md`](./integration-plan.md) §3에 남겨 두었습니다.
 
 | 단계 | 상태 |
 | --- | --- |
-| 1. `agent/claude`를 `main`에 병합 | 대기 (사용자 승인 필요) |
-| 2. `agent/codex`를 `main`에 병합 (`.gitignore`는 codex 버전 채택) | 대기 |
+| 1. `agent/claude`를 `main`에 병합 | **완료** |
+| 2. `agent/codex`를 `main`에 병합 (`.gitignore`는 codex 버전 채택) | **완료** |
 | 3. `shared/`를 `music-quiz`에 연결하고 `page.tsx`의 자체 정규화 함수 제거 | **완료** (Vite alias + tsconfig paths) |
 | 4. 권위 서버 구현 | **완료** (`server/`) |
 | 5. 클라이언트를 프로토콜 클라이언트로 전환 | **완료** — 참조 클라이언트(`client/`)와 `music-quiz` 양쪽 |
 | 6. 방장 음원 등록 화면 | **완료** (`client/ui.ts`, `music-quiz`의 setup 화면, `POST /api/rooms`의 `media`) |
+| 7. 60초 텍스트 라운드, 중간 힌트, 실시간 득점자 피드 | **완료** (`2784fc9`, `80e5918`) |
 
 `music-quiz`는 살리기로 결정되었고, 포팅이 끝났습니다.
 `client/protocolClient.ts`는 DOM도 프레임워크도 쓰지 않으므로 React
@@ -292,7 +292,7 @@ git merge main
 의존성 방향을 한쪽으로만 두고, 의존성 없는 두 패키지를 위해 publish/build
 단계를 만들지 않기 위해서입니다.
 
-각 단계의 diff와 테스트 결과는 통합 전에 Codex가 검토합니다
+후속 기능도 같은 브랜치·검토·테스트 절차를 거쳐 `main`에 통합합니다
 (`AGENTS.md` 기본 정책).
 
 ## 관련 문서

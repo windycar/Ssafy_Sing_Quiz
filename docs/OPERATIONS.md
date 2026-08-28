@@ -271,7 +271,7 @@ node scripts\host.ts --playlist playlist.txt --songs data\songs.recovered.json
   이 경로를 쓰지 않으면 재배포가 무기한 대기합니다.
 
 테스트는 321개(`shared` 84, `server` 192, `client` 45)이며 모두 통과합니다.
-`music-quiz/`는 빌드가 필요해 별도로 7개를 돌립니다. 실행 스크립트 테스트 2개도
+`music-quiz/`는 빌드가 필요해 별도로 8개를 돌립니다. 실행 스크립트 테스트 2개도
 별도로 통과해야 합니다.
 
 ### 남은 항목

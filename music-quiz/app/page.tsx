@@ -43,6 +43,11 @@ import {
 } from "@song-quiz/shared/questions.ts";
 import type { GameMode } from "@song-quiz/shared/questions.ts";
 import { apiBase, hostKey, readStorage, sessionKey, socketUrl, writeStorage } from "./gameServer";
+import YouTubeHostPlayer from "./YouTubeHostPlayer";
+import type {
+  YouTubeHostPlayerHandle,
+  YouTubePlaybackStatus,
+} from "./YouTubeHostPlayer";
 
 // Browser-safe setup defaults. The authoritative server still clamps these to
 // the catalog and bank sizes when the room is created.
@@ -147,9 +152,14 @@ export default function Home() {
 
   const clientRef = useRef<ProtocolClient | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const youtubeRef = useRef<YouTubeHostPlayerHandle | null>(null);
   const clipEndRef = useRef<number | null>(null);
   const draftsRef = useRef(new Map<string, Draft>());
   const [audioNote, setAudioNote] = useState("");
+  const [youtubeStatus, setYoutubeStatus] = useState<YouTubePlaybackStatus>({
+    message: "",
+    canRetry: false,
+  });
 
   useEffect(() => {
     if (toast === null) return;
@@ -197,21 +207,32 @@ export default function Home() {
     (message: ServerMessage) => {
       switch (message.type) {
         case "ROUND_START":
+          youtubeRef.current?.stop();
           // A proverb or idiom round has no media at all; its clue is the text
           // already on screen.
           if (message.question.mode === "song" && !message.livePlayback) {
             void playClip(message.mediaUrl, message.clipStartMs, message.clipEndMs);
           }
           break;
+        case "ROUND_CUE":
+          youtubeRef.current?.start({
+            videoId: message.youtubeId,
+            startMs: message.startMs,
+            playMs: message.playMs,
+          });
+          break;
         case "ROUND_PAUSED":
           audioRef.current?.pause();
+          youtubeRef.current?.pause();
           break;
         case "ROUND_RESUMED":
           void audioRef.current?.play().catch(() => undefined);
+          youtubeRef.current?.resume();
           break;
         case "ROUND_REVEAL":
         case "GAME_OVER":
           audioRef.current?.pause();
+          youtubeRef.current?.stop();
           setAudioNote("");
           break;
         case "ERROR":
@@ -478,6 +499,7 @@ export default function Home() {
   // Songs open every game, so that is the fallback before any of it arrives.
   const mode: GameMode = round?.question.mode ?? state?.mode ?? "song";
   const textMode = isTextMode(mode);
+  const mediaNote = youtubeStatus.message !== "" ? youtubeStatus.message : audioNote;
   const totalQuestions = round?.question.totalQuestions ?? state?.totalQuestions ?? 0;
   const reveal = state?.reveal ?? null;
 
@@ -537,6 +559,7 @@ export default function Home() {
 
   return (
     <main className="app-shell">
+      <YouTubeHostPlayer ref={youtubeRef} enabled={isHost} onStatus={setYoutubeStatus} />
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">
@@ -1008,8 +1031,13 @@ export default function Home() {
               <div className="question-copy">
                 <span className="genre-pill">{CLUE_KIND[mode]}</span>
                 <h2>{MODE_PROMPT[mode]}</h2>
-                <p>{!textMode && audioNote !== "" ? audioNote : CLUE_HELP[mode]}</p>
-                {!textMode && audioNote !== "" && (
+                <p>{!textMode && mediaNote !== "" ? mediaNote : CLUE_HELP[mode]}</p>
+                {!textMode && youtubeStatus.canRetry && (
+                  <button className="text-button" onClick={() => youtubeRef.current?.resume()}>
+                    영상 재생
+                  </button>
+                )}
+                {!textMode && !youtubeStatus.canRetry && audioNote !== "" && (
                   <button
                     className="text-button"
                     onClick={() => void audioRef.current?.play().then(() => setAudioNote(""))}

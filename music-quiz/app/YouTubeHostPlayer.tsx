@@ -37,6 +37,7 @@ interface YouTubePlayerInstance {
   pauseVideo(): void;
   stopVideo(): void;
   setVolume(volume: number): void;
+  unMute(): void;
 }
 
 interface YouTubeApi {
@@ -72,6 +73,8 @@ export function describeYouTubeError(code: number): string {
       return "삭제되었거나 비공개인 영상입니다. 곡목록의 링크를 바꿔 주세요.";
     case 2:
       return "곡목록의 유튜브 주소가 올바르지 않습니다.";
+    case 153:
+      return "유튜브가 이 사이트의 재생 요청을 확인하지 못했습니다. 페이지를 새로고침해 주세요.";
     default:
       return `유튜브 영상을 재생할 수 없습니다 (오류 ${code}).`;
   }
@@ -119,7 +122,11 @@ const YouTubeHostPlayer = forwardRef<YouTubeHostPlayerHandle, Props>(function Yo
     if (current !== null) {
       current.loadVideoById(request);
       if (pausedRef.current) current.pauseVideo();
-      else current.playVideo();
+      else {
+        current.setVolume(100);
+        current.unMute();
+        current.playVideo();
+      }
       onStatus({ message: "유튜브 하이라이트를 재생하는 중…", canRetry: true });
       return;
     }
@@ -144,6 +151,7 @@ const YouTubeHostPlayer = forwardRef<YouTubeHostPlayerHandle, Props>(function Yo
             const latest = pendingRef.current;
             if (latest !== null) event.target.loadVideoById(cueOptions(latest));
             event.target.setVolume(100);
+            event.target.unMute();
             if (pausedRef.current) event.target.pauseVideo();
             else event.target.playVideo();
             onStatus({ message: "유튜브 하이라이트를 재생하는 중…", canRetry: true });
@@ -185,8 +193,15 @@ const YouTubeHostPlayer = forwardRef<YouTubeHostPlayerHandle, Props>(function Yo
       },
       resume() {
         pausedRef.current = false;
-        playPending();
-        playerRef.current?.playVideo();
+        const player = playerRef.current;
+        if (player === null) {
+          playPending();
+          return;
+        }
+        player.setVolume(100);
+        player.unMute();
+        player.playVideo();
+        onStatus({ message: "재생을 다시 시도하는 중…", canRetry: true });
       },
       stop,
     }),

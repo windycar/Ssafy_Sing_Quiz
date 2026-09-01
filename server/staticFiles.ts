@@ -34,19 +34,21 @@ const MIME: Readonly<Record<string, string>> = {
 };
 
 /**
- * Locks the page down to its own origin. `media-src` is open because the whole
- * point of host media registration is that the host supplies a URL we do not
- * control; everything that could execute is same-origin only. This is defence
- * in depth behind the client's use of `textContent` for all player-supplied
- * strings (analysis §7 flags nicknames and guesses as XSS vectors).
+ * Locks the page down to its own origin, apart from the two capabilities the
+ * host-only YouTube player needs: its official API script and its player
+ * iframe. Without both exceptions the browser blocks the API before the round
+ * can make any sound. `media-src` is open because the host may also register a
+ * licensed clip URL we do not control. This is defence in depth behind the
+ * client's use of `textContent` for all player-supplied strings.
  */
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' https://www.youtube.com",
   "style-src 'self'",
   "img-src 'self' data:",
   'media-src *',
   "connect-src 'self' ws: wss:",
+  'frame-src https://www.youtube.com',
   "frame-ancestors 'none'",
   "base-uri 'none'",
   "form-action 'none'",
@@ -113,7 +115,13 @@ export function createStaticHandler(mounts: readonly StaticMount[]): StaticHandl
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
     };
-    if (extension === '.html') headers['content-security-policy'] = CONTENT_SECURITY_POLICY;
+    if (extension === '.html') {
+      headers['content-security-policy'] = CONTENT_SECURITY_POLICY;
+      // YouTube error 153 is raised when a player request has no referrer (or
+      // equivalent client identity). Send only this page's origin cross-site;
+      // the room path and host token in the URL remain private.
+      headers['referrer-policy'] = 'strict-origin-when-cross-origin';
+    }
 
     response.writeHead(200, headers);
     response.end(body);

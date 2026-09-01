@@ -1057,8 +1057,9 @@ button:disabled {
   position: fixed;
   right: 0;
   bottom: 0;
-  width: 320px;
-  height: 180px;
+  /* YouTube requires an embedded player viewport of at least 200 × 200. */
+  width: 480px;
+  height: 270px;
   opacity: 0.01;
   pointer-events: none;
   z-index: -1;

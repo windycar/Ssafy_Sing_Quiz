@@ -207,6 +207,10 @@ export default function Home() {
     (message: ServerMessage) => {
       switch (message.type) {
         case "ROUND_START":
+          // A draft belongs to exactly one question. Server state already
+          // resets feedback here; reset the separately controlled input too.
+          // Other messages still preserve typing within the same round.
+          setAnswer("");
           youtubeRef.current?.stop();
           // A proverb or idiom round has no media at all; its clue is the text
           // already on screen.

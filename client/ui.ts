@@ -190,6 +190,8 @@ interface YTPlayer {
   pauseVideo(): void;
   stopVideo(): void;
   setVolume(volume: number): void;
+  unMute(): void;
+  getPlayerState(): number;
 }
 
 declare global {
@@ -241,12 +243,17 @@ class YouTubePlayer {
   private readonly retry = el<HTMLButtonElement>('yt-retry');
   private player: YTPlayer | null = null;
   private pending: { videoId: string; startSeconds: number; endSeconds: number } | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.retry.addEventListener('click', () => {
+      const request = this.pending;
+      if (request === null || this.player === null) return;
       this.retry.hidden = true;
-      this.player?.playVideo();
-      this.state.textContent = '재생 중';
+      this.player.setVolume(100);
+      this.player.unMute();
+      this.player.playVideo();
+      this.expectPlayback(request);
     });
   }
 
@@ -271,12 +278,20 @@ class YouTubePlayer {
     if (this.pending !== request) return;
 
     if (this.player === null) {
-      this.player = this.create(request);
+      try {
+        this.player = this.create(request);
+        this.expectPlayback(request);
+      } catch {
+        this.state.textContent = '유튜브 플레이어를 시작하지 못했습니다. 페이지를 새로고침해 주세요.';
+        this.retry.hidden = true;
+      }
       return;
     }
     this.player.loadVideoById(request);
+    this.player.setVolume(100);
+    this.player.unMute();
     this.player.playVideo();
-    this.state.textContent = '재생 중';
+    this.expectPlayback(request);
   }
 
   pause(): void {
@@ -284,10 +299,15 @@ class YouTubePlayer {
   }
 
   resume(): void {
-    this.player?.playVideo();
+    if (this.player === null || this.pending === null) return;
+    this.player.setVolume(100);
+    this.player.unMute();
+    this.player.playVideo();
+    this.expectPlayback(this.pending);
   }
 
   stop(): void {
+    this.clearRetryTimer();
     this.pending = null;
     this.player?.stopVideo();
     this.state.textContent = '';
@@ -310,23 +330,55 @@ class YouTubePlayer {
         rel: 0,
         // Related videos and the end screen would name other songs.
         iv_load_policy: 3,
+        playsinline: 1,
+        // Required client identity for the IFrame API. Without it YouTube can
+        // reject an otherwise valid video with player error 153.
+        origin: window.location.origin,
       },
       events: {
         onReady: (event: { target: YTPlayer }) => {
+          const latest = this.pending;
+          if (latest === null) return;
+          event.target.loadVideoById(latest);
           event.target.setVolume(100);
+          event.target.unMute();
           event.target.playVideo();
-          this.state.textContent = '재생 중';
+          this.expectPlayback(latest);
         },
         onStateChange: (event: { data: number }) => {
-          // Autoplay blocked leaves the player parked rather than playing.
-          if (event.data === YT.PlayerState.PLAYING) this.retry.hidden = true;
+          if (event.data === YT.PlayerState.PLAYING) {
+            this.clearRetryTimer();
+            this.retry.hidden = true;
+            this.state.textContent = '재생 중';
+          }
         },
         onError: (event: { data: number }) => {
+          this.clearRetryTimer();
           this.state.textContent = describeYouTubeError(event.data);
           this.retry.hidden = false;
         },
       },
     });
+  }
+
+  /** Audible autoplay may be refused without emitting a YouTube error. */
+  private expectPlayback(request: { videoId: string; startSeconds: number; endSeconds: number }): void {
+    this.clearRetryTimer();
+    this.retry.hidden = true;
+    this.state.textContent = '재생 시작 중…';
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      const playing = window.YT?.PlayerState.PLAYING;
+      if (this.pending !== request || playing === undefined || this.player?.getPlayerState() === playing) return;
+      this.state.textContent = '브라우저가 자동 재생을 막았습니다. 아래 버튼을 눌러 주세요.';
+      this.retry.hidden = false;
+    }, 2_000);
+  }
+
+  private clearRetryTimer(): void {
+    if (this.retryTimer === null) return;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
   }
 }
 
@@ -344,6 +396,8 @@ function describeYouTubeError(code: number): string {
       return '삭제되었거나 비공개인 영상입니다.';
     case 2:
       return '영상 주소가 올바르지 않습니다.';
+    case 153:
+      return '유튜브가 이 사이트의 재생 요청을 확인하지 못했습니다. 페이지를 새로고침해 주세요.';
     default:
       return `영상을 재생할 수 없습니다 (오류 ${code}).`;
   }

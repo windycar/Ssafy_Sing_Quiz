@@ -453,13 +453,14 @@ input:focus-visible {
   position: fixed;
   left: -10000px;
   top: 0;
-  width: 2px;
-  height: 2px;
+  /* YouTube rejects undersized embeds; keep its required viewport off-screen. */
+  width: 480px;
+  height: 270px;
   overflow: hidden;
   opacity: .001;
   pointer-events: none;
 }
-.youtube-host-mount iframe { width: 2px !important; height: 2px !important; }
+.youtube-host-mount iframe { width: 480px !important; height: 270px !important; }
 
 .result-head h1 em { color: var(--blue); text-decoration-color: var(--lime); }
 .result-illustration {

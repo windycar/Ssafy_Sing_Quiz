@@ -605,7 +605,19 @@ test('the client is served with a content security policy', async () => {
       const response = await fetch(`${base}/`);
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type') ?? '', /text\/html/u);
-      assert.match(response.headers.get('content-security-policy') ?? '', /default-src 'self'/u);
+      const policy = response.headers.get('content-security-policy') ?? '';
+      assert.match(policy, /default-src 'self'/u);
+      assert.match(
+        policy,
+        /script-src 'self' https:\/\/www\.youtube\.com/u,
+        'the policy must allow the official IFrame API script',
+      );
+      assert.match(
+        policy,
+        /frame-src https:\/\/www\.youtube\.com/u,
+        'the policy must allow the player iframe created by that script',
+      );
+      assert.equal(response.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
       assert.match(await response.text(), /SsafyDay/u);
     },
     { serveClient: true },

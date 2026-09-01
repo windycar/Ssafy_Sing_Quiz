@@ -122,6 +122,18 @@ test('every host control lives behind the host-only panel', () => {
   assert.ok(/host-end[\s\S]{0,500}confirm\(/u.test(UI), 'ending the game must be confirmed');
 });
 
+test('the hidden host player is allowed to play and recovers from blocked autoplay', () => {
+  assert.ok(HTML.includes('id="yt-mount"'), 'the YouTube player has no mount point');
+  assert.ok(HTML.includes('id="yt-retry"'), 'the host needs a manual playback fallback');
+  assert.ok(UI.includes("https://www.youtube.com/iframe_api"), 'the official IFrame API is not loaded');
+  assert.ok(UI.includes('origin: window.location.origin'), 'YouTube needs the page origin as client identity');
+  assert.ok(UI.includes('브라우저가 자동 재생을 막았습니다'), 'silent autoplay refusal has no visible recovery');
+  assert.ok(UI.includes('getPlayerState()'), 'the fallback must check whether playback really started');
+  assert.ok(UI.includes('.unMute()'), 'the host player must not remain silently muted');
+  assert.match(CSS, /#yt-stage[\s\S]{0,240}width: 480px/u);
+  assert.match(CSS, /#yt-stage[\s\S]{0,260}height: 270px/u);
+});
+
 test('the reveal lists every scorer in order, from the server message', () => {
   const reveal = /function renderReveal[\s\S]*?\n\}/u.exec(UI)?.[0];
   assert.ok(reveal, 'renderReveal is gone');

@@ -174,7 +174,10 @@ test("the React host plays private YouTube round cues without exposing the video
   assert.match(player, /from "next\/script"/, "third-party scripts must use next/script");
   assert.match(player, /https:\/\/www\.youtube\.com\/iframe_api/);
   assert.match(player, /loadVideoById/);
+  assert.match(player, /\.unMute\(\)/);
   assert.match(player, /controls: 0/);
   assert.match(player, /origin: window\.location\.origin/);
   assert.match(css, /\.youtube-host-mount[\s\S]{0,240}left: -10000px/);
+  assert.match(css, /\.youtube-host-mount[\s\S]{0,320}width: 480px/);
+  assert.match(css, /\.youtube-host-mount[\s\S]{0,360}height: 270px/);
 });

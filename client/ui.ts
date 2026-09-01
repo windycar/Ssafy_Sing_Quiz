@@ -581,9 +581,18 @@ function connect(roomId: string, options: { nickname?: string; playerToken?: str
   client.connect();
 }
 
+function clearAnswerDraft(): void {
+  el<HTMLInputElement>('answer-input').value = '';
+  el('answer-hint').textContent = '띄어쓰기와 문장부호는 무시됩니다.';
+}
+
 function handleEvent(message: ServerMessage): void {
   switch (message.type) {
     case 'ROUND_START':
+      // The input is DOM state rather than protocol state. Clear it only when
+      // the server opens a new question, so ordinary updates within the same
+      // round never erase what the player is still typing.
+      clearAnswerDraft();
       // A text round has no media at all, and a live-playback round has no URL
       // for a player to fetch — the host's ROUND_CUE arrives separately and
       // drives the video. Only a hosted-audio song round has something to play.
@@ -1213,8 +1222,7 @@ function wire(): void {
       toast('서버와 연결되어 있지 않아 정답을 보내지 못했습니다.');
       return;
     }
-    answerInput.value = '';
-    el('answer-hint').textContent = '띄어쓰기와 문장부호는 무시됩니다.';
+    clearAnswerDraft();
   });
 
   el('play-again').addEventListener('click', () => {

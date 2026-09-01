@@ -94,6 +94,19 @@ test("the game screen renders the clue, progress, and scorers from server state"
   assert.match(page, /MODE_LABEL\[mode\]/);
 });
 
+test("a new round clears an unfinished answer without clearing it on ordinary state updates", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const roundStart = /case "ROUND_START":[\s\S]*?case "ROUND_CUE":/u.exec(page)?.[0];
+
+  assert.ok(roundStart, "the ROUND_START event handler is missing");
+  assert.match(roundStart, /setAnswer\(""\)/, "a new question must clear the previous draft");
+  assert.doesNotMatch(
+    page,
+    /useEffect\(\(\) => \{[\s\S]{0,300}setAnswer\(""\)/u,
+    "an unrelated React effect must not erase typing during the same round",
+  );
+});
+
 test("the React client never judges an answer", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 

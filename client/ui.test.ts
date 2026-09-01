@@ -122,6 +122,20 @@ test('every host control lives behind the host-only panel', () => {
   assert.ok(/host-end[\s\S]{0,500}confirm\(/u.test(UI), 'ending the game must be confirmed');
 });
 
+test('a new round clears an unfinished answer without clearing it on ordinary renders', () => {
+  const roundStart = /case 'ROUND_START':[\s\S]*?case 'ROUND_CUE':/u.exec(UI)?.[0];
+  assert.ok(roundStart, 'the ROUND_START event handler is missing');
+  assert.ok(roundStart.includes('clearAnswerDraft()'), 'a new question must clear the previous draft');
+
+  const renderRound = /function renderRound[\s\S]*?\n\}/u.exec(UI)?.[0];
+  assert.ok(renderRound, 'renderRound is missing');
+  assert.equal(
+    renderRound.includes('clearAnswerDraft()'),
+    false,
+    'same-round timer, hint, or scorer renders must preserve what the player is typing',
+  );
+});
+
 test('the hidden host player is allowed to play and recovers from blocked autoplay', () => {
   assert.ok(HTML.includes('id="yt-mount"'), 'the YouTube player has no mount point');
   assert.ok(HTML.includes('id="yt-retry"'), 'the host needs a manual playback fallback');
